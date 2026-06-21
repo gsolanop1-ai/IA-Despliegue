@@ -1,0 +1,84 @@
+<!--
+  index.html — Página de inicio / Login
+  Ruta: /
+  Función: entrada al sistema por nombre de usuario (crea sesión en localStorage).
+  API: POST /api/usuario/entrar
+-->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>NutriPerú — Recomendación Alimenticia</title>
+  <link rel="stylesheet" href="/static/style.css"/>
+</head>
+<body>
+  <div class="hero">
+    <div class="hero-logo">Nutri<span>Perú</span></div>
+    <p class="hero-tagline">Tu plan alimenticio diario personalizado con ingredientes peruanos</p>
+
+    <div class="hero-form">
+      <input id="usernameInput" class="hero-input" type="text"
+             placeholder="Escribe tu nombre de usuario"
+             maxlength="30" autocomplete="off" autocapitalize="none"/>
+      <button class="hero-btn" onclick="entrar()">Entrar →</button>
+      <p id="errorMsg" style="color:#FFD0D4;font-size:.82rem;margin-top:10px;min-height:18px;"></p>
+    </div>
+
+    <div class="hero-features">
+      <span class="feature-pill">🥗 81 ingredientes peruanos</span>
+      <span class="feature-pill">🎯 Plan personalizado</span>
+      <span class="feature-pill">📊 Macros exactos</span>
+      <span class="feature-pill">🔄 Variedad diaria</span>
+    </div>
+  </div>
+
+  <script>
+    // Si ya hay username guardado, redirigir según tipo
+    const saved = localStorage.getItem('np_username');
+    if (saved) window.location.href = saved === 'admin' ? '/admin' : '/plan';
+
+    document.getElementById('usernameInput').addEventListener('keydown', e => {
+      if (e.key === 'Enter') entrar();
+    });
+
+    async function entrar() {
+      const input = document.getElementById('usernameInput');
+      const err   = document.getElementById('errorMsg');
+      const username = input.value.trim().toLowerCase();
+
+      if (username.length < 2) {
+        err.textContent = 'El nombre debe tener al menos 2 caracteres.';
+        return;
+      }
+      if (!/^[a-z0-9_]+$/.test(username)) {
+        err.textContent = 'Solo letras minúsculas, números y guión bajo.';
+        return;
+      }
+
+      // Usuario especial: panel académico
+      if (username === 'admin') {
+        localStorage.setItem('np_username', 'admin');
+        window.location.href = '/admin';
+        return;
+      }
+
+      err.textContent = '';
+      try {
+        const res  = await fetch('/api/usuario/entrar', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({username})
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Error');
+
+        localStorage.setItem('np_username', data.username);
+        window.location.href = data.tiene_perfil ? '/plan' : '/perfil';
+      } catch (e) {
+        err.textContent = e.message;
+      }
+    }
+  </script>
+</body>
+</html>

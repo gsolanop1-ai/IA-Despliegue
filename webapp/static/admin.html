@@ -1,0 +1,1220 @@
+<!--
+  admin.html — Panel académico
+  Ruta: /admin  (usuario: "admin")
+  Función: interfaz de análisis y validación del sistema, agrupa:
+    Tab 1 "Dataset"        → estadísticas EDA del CSV (Celdas 1-3)
+    Tab 2 "K-Means"        → clustering k=4, silueta=0.450, PCA 2D (Celda 8)
+    Tab 3 "VV&E"           → suite de verificación con 4 perfiles (Celda 14)
+    Tab 4 "Visualizaciones"→ gráficas Chart.js de EDA, K-Means y VV&E
+  API: GET /api/admin/stats
+       GET /api/admin/kmeans
+       GET /api/admin/vve
+-->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>NutriPerú — Panel Académico</title>
+  <link rel="stylesheet" href="/static/style.css"/>
+  <style>
+    .admin-hero {
+      background: linear-gradient(135deg, var(--gris-700) 0%, #2c3e50 100%);
+      color: #fff;
+      padding: 28px 20px 22px;
+      text-align: center;
+    }
+    .admin-hero h1 { font-size: 1.35rem; font-weight: 800; margin-bottom: 5px; letter-spacing: -.5px; }
+    .admin-hero p  { font-size: .82rem; opacity: .72; margin-bottom: 3px; }
+    .admin-badge {
+      display: inline-block;
+      background: var(--oro);
+      color: var(--gris-700);
+      padding: 3px 12px;
+      border-radius: 20px;
+      font-size: .7rem;
+      font-weight: 800;
+      margin-top: 10px;
+      letter-spacing: .05em;
+    }
+
+    /* ── Tabs ── */
+    .tab-nav {
+      background: #fff;
+      border-bottom: 2px solid var(--gris-200);
+      display: flex;
+      overflow-x: auto;
+      position: sticky;
+      top: 60px;
+      z-index: 50;
+    }
+    .tab-btn {
+      padding: 13px 18px;
+      border: none;
+      background: none;
+      font-size: .83rem;
+      font-weight: 600;
+      color: var(--gris-400);
+      cursor: pointer;
+      white-space: nowrap;
+      border-bottom: 3px solid transparent;
+      margin-bottom: -2px;
+      transition: color .15s, border-color .15s;
+    }
+    .tab-btn.active   { color: var(--rojo); border-bottom-color: var(--rojo); }
+    .tab-btn:hover:not(.active) { color: var(--gris-700); }
+    .tab-pane         { display: none; }
+    .tab-pane.active  { display: block; }
+
+    /* ── Layout ── */
+    .admin-content {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 24px 16px 60px;
+    }
+    .a-section { margin-bottom: 24px; }
+    .a-section-title {
+      font-size: .7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--rojo);
+      margin-bottom: 12px;
+      padding-bottom: 6px;
+      border-bottom: 2px solid var(--rojo-light);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .a-card {
+      background: #fff;
+      border-radius: var(--radio);
+      box-shadow: var(--sombra);
+      padding: 20px;
+      margin-bottom: 12px;
+    }
+    .a-card h3  { font-size: .88rem; font-weight: 700; color: var(--gris-700); margin-bottom: 8px; }
+    .a-card p   { font-size: .83rem; color: var(--gris-700); line-height: 1.65; }
+
+    /* ── Tables ── */
+    .a-table { width: 100%; border-collapse: collapse; font-size: .81rem; }
+    .a-table th {
+      background: var(--gris-100);
+      text-align: left;
+      padding: 8px 12px;
+      font-size: .7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: var(--gris-400);
+      border-bottom: 2px solid var(--gris-200);
+    }
+    .a-table td {
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--gris-200);
+      color: var(--gris-700);
+      vertical-align: top;
+      line-height: 1.45;
+    }
+    .a-table tr:last-child td { border-bottom: none; }
+    .a-table tr:hover td      { background: var(--gris-100); }
+
+    /* ── Architecture grid ── */
+    .arch-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+    }
+    .arch-card {
+      background: var(--gris-100);
+      border-radius: 10px;
+      padding: 14px 10px;
+      text-align: center;
+    }
+    .arch-num   { font-size: 1.5rem; font-weight: 800; color: var(--rojo); display: block; margin-bottom: 4px; }
+    .arch-label { font-size: .72rem; font-weight: 700; color: var(--gris-700); display: block; margin-bottom: 3px; }
+    .arch-tech  { font-size: .65rem; color: var(--gris-400); }
+
+    /* ── Stats ── */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .stat-box   { background: #fff; border-radius: 10px; box-shadow: var(--sombra); padding: 16px; text-align: center; }
+    .stat-num   { font-size: 1.8rem; font-weight: 800; color: var(--rojo); display: block; }
+    .stat-label { font-size: .7rem; color: var(--gris-400); }
+
+    /* ── Notebook list ── */
+    .notebook-list {
+      list-style: none;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+      gap: 8px;
+    }
+    .notebook-list li {
+      background: var(--gris-100);
+      border-radius: 8px;
+      padding: 9px 13px;
+      font-size: .81rem;
+      color: var(--gris-700);
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .n-num { font-weight: 800; color: var(--rojo); font-size: .75rem; min-width: 18px; }
+
+    /* ── Decision cards ── */
+    .dec-card {
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: var(--sombra);
+      padding: 14px 16px;
+      margin-bottom: 8px;
+      display: grid;
+      grid-template-columns: 160px 1fr 1fr;
+      gap: 14px;
+      align-items: start;
+    }
+    .dec-badge {
+      display: inline-block;
+      background: #e8f5e9;
+      color: #2e7d32;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: .65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    .dec-comp     { font-size: .78rem; font-weight: 700; color: var(--gris-700); }
+    .dec-decision { font-size: .78rem; color: var(--gris-700); line-height: 1.4; }
+    .dec-reason   { font-size: .75rem; color: var(--gris-400); line-height: 1.45; }
+
+    /* ── Badges ── */
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: .67rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .badge-soft  { background: #e3f2fd; color: #1565c0; }
+    .badge-hard  { background: #fce4ec; color: #c62828; }
+
+    /* ── Rule groups ── */
+    .rule-group-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .rule-group-letter {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.05rem;
+      font-weight: 800;
+      flex-shrink: 0;
+    }
+    .rule-group-letter.soft { background: #e3f2fd; color: #1565c0; }
+    .rule-group-letter.hard { background: #fce4ec; color: #c62828; }
+    .rule-group-title { font-size: .88rem; font-weight: 700; color: var(--gris-700); margin-bottom: 2px; }
+    .rule-group-sub   { font-size: .72rem; color: var(--gris-400); }
+    .rule-group-sub code {
+      background: var(--gris-100);
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-size: .68rem;
+    }
+
+    @media (max-width: 640px) {
+      .arch-grid    { grid-template-columns: repeat(2, 1fr); }
+      .dec-card     { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 480px) {
+      .arch-grid    { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="topbar-logo">Nutri<span>Perú</span></div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <span style="background:var(--oro);color:var(--gris-700);padding:3px 10px;
+                   border-radius:20px;font-size:.7rem;font-weight:800;letter-spacing:.05em">
+        ADMIN
+      </span>
+      <button onclick="cerrarSesion()"
+              style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);
+                     color:#fff;border-radius:8px;padding:6px 10px;cursor:pointer;font-size:.8rem">
+        Salir
+      </button>
+    </div>
+  </div>
+
+  <div class="admin-hero">
+    <h1>Sistema de Recomendación Alimenticia</h1>
+    <p>NutriPerú · Inteligencia Artificial: Principios y Técnicas (ISIA-108)</p>
+    <p>Universidad Privada Antenor Orrego · Semestre 2026-10</p>
+    <span class="admin-badge">PANEL ACADÉMICO</span>
+  </div>
+
+  <div class="tab-nav">
+    <button class="tab-btn active" onclick="showTab('diseno', this)">📋 Informe de Diseño</button>
+    <button class="tab-btn" onclick="showTab('bitacora', this)">📓 Bitácora de Decisiones</button>
+    <button class="tab-btn" onclick="showTab('catalogo', this)">⚙️ Catálogo de Reglas</button>
+    <button class="tab-btn" onclick="showTab('viz', this); initCharts()">📊 Visualizaciones</button>
+  </div>
+
+  <div class="admin-content">
+
+    <!-- ════════════════════════════════════════════════════
+         TAB 1 — INFORME DE DISEÑO
+    ════════════════════════════════════════════════════ -->
+    <div id="tab-diseno" class="tab-pane active">
+
+      <div class="a-section">
+        <div class="a-section-title">📌 Descripción del sistema</div>
+        <div class="a-card">
+          <p>
+            Sistema inteligente de recomendación nutricional personalizada que genera planes alimenticios
+            diarios con <strong>ingredientes peruanos</strong>, basado en el perfil del usuario y aplicando
+            técnicas de inteligencia artificial. El sistema entrega un plan de 4 comidas
+            (desayuno, almuerzo, cena, snack) con ingredientes específicos y cantidades exactas en gramos,
+            adaptadas al objetivo nutricional del usuario. Incluye superalimentos andinos como tarwi,
+            kiwicha, maca y olluco.
+          </p>
+        </div>
+      </div>
+
+      <div class="a-section">
+        <div class="a-section-title">🏗️ Arquitectura del sistema — 5 capas de IA</div>
+        <div class="a-card">
+          <div class="arch-grid">
+            <div class="arch-card">
+              <span class="arch-num">1</span>
+              <span class="arch-label">Cálculo nutricional</span>
+              <span class="arch-tech">Mifflin-St Jeor (TMB → GET)</span>
+            </div>
+            <div class="arch-card">
+              <span class="arch-num">2</span>
+              <span class="arch-label">Sistema Experto</span>
+              <span class="arch-tech">15 reglas en grupos A–E</span>
+            </div>
+            <div class="arch-card">
+              <span class="arch-num">3</span>
+              <span class="arch-label">K-Means Clustering</span>
+              <span class="arch-tech">Validación del dataset</span>
+            </div>
+            <div class="arch-card">
+              <span class="arch-num">4</span>
+              <span class="arch-label">Optimización PuLP</span>
+              <span class="arch-tech">MILP — selección óptima por comida</span>
+            </div>
+            <div class="arch-card">
+              <span class="arch-num">5</span>
+              <span class="arch-label">Generador de nombres</span>
+              <span class="arch-tech">Plantillas locales de platillos</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="a-section">
+        <div class="a-section-title">💻 Tecnologías utilizadas</div>
+        <div class="a-card" style="padding:0;overflow:hidden">
+          <table class="a-table">
+            <thead>
+              <tr><th>Capa</th><th>Tecnología</th><th>Rol en el sistema</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Backend</td><td>FastAPI + Python 3.x</td><td>API REST y servidor web</td></tr>
+              <tr><td>Base de datos</td><td>SQLite (local) · PostgreSQL (producción)</td><td>Persistencia de perfiles y planes diarios</td></tr>
+              <tr><td>ORM</td><td>SQLAlchemy 2.x</td><td>Abstracción de acceso a datos</td></tr>
+              <tr><td>Optimización</td><td>PuLP + CBC Solver</td><td>Programación lineal mixta entera por comida</td></tr>
+              <tr><td>ML / Clustering</td><td>scikit-learn</td><td>K-Means para validación de categorías del dataset</td></tr>
+              <tr><td>Procesamiento</td><td>pandas + numpy</td><td>Manejo del dataset de 81 ingredientes</td></tr>
+              <tr><td>Frontend</td><td>HTML + CSS + JavaScript vanilla</td><td>Interfaz de usuario sin frameworks</td></tr>
+              <tr><td>Despliegue</td><td>Render.com</td><td>Hosting en la nube con PostgreSQL gestionado</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="a-section">
+        <div class="a-section-title">📦 Dataset de ingredientes</div>
+        <div class="stat-grid">
+          <div class="stat-box"><span class="stat-num">81</span><span class="stat-label">Ingredientes</span></div>
+          <div class="stat-box"><span class="stat-num">8</span><span class="stat-label">Categorías</span></div>
+          <div class="stat-box"><span class="stat-num">18</span><span class="stat-label">Columnas</span></div>
+          <div class="stat-box"><span class="stat-num">100g</span><span class="stat-label">Base de medición</span></div>
+        </div>
+        <div class="a-card" style="padding:0;overflow:hidden">
+          <table class="a-table">
+            <thead><tr><th>Categoría</th><th>Ingredientes</th><th>Tipo de uso</th></tr></thead>
+            <tbody>
+              <tr><td>Proteínas</td><td>14</td><td>Principal</td></tr>
+              <tr><td>Carbohidratos</td><td>19</td><td>Principal</td></tr>
+              <tr><td>Grasas</td><td>7</td><td>Principal</td></tr>
+              <tr><td>Lácteos</td><td>4</td><td>Principal</td></tr>
+              <tr><td>Bebidas</td><td>3</td><td>Principal</td></tr>
+              <tr><td>Frutas</td><td>17</td><td>Principal</td></tr>
+              <tr><td>Verduras</td><td>12</td><td>Principal</td></tr>
+              <tr><td>Condimentos</td><td>5</td><td>Condimento</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="a-card" style="margin-top:10px">
+          <p>
+            Dataset construido con valores verificados contra <strong>USDA FoodData Central</strong> y la
+            <strong>Tabla Peruana de Composición de Alimentos del INS</strong>. Todos los valores están en
+            estado cocido para alimentos que se consumen cocidos, estandarizados a 100g.
+          </p>
+        </div>
+      </div>
+
+      <div class="a-section">
+        <div class="a-section-title">📒 Estructura del notebook (demo.ipynb)</div>
+        <div class="a-card">
+          <ul class="notebook-list">
+            <li><span class="n-num">1</span>Setup del entorno</li>
+            <li><span class="n-num">2</span>Carga del dataset</li>
+            <li><span class="n-num">3</span>Análisis exploratorio (EDA)</li>
+            <li><span class="n-num">4</span>Cálculo nutricional (Mifflin-St Jeor)</li>
+            <li><span class="n-num">5</span>Reparto de macros por objetivo</li>
+            <li><span class="n-num">6</span>Perfil del usuario</li>
+            <li><span class="n-num">7</span>Sistema Experto (reglas A–B)</li>
+            <li><span class="n-num">8</span>K-Means Clustering</li>
+            <li><span class="n-num">9</span>Optimización con PuLP</li>
+            <li><span class="n-num">10</span>Orquestador del plan diario</li>
+            <li><span class="n-num">11</span>Ejecución del sistema completo</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="a-section">
+        <div class="a-section-title">🎓 Atributos del graduado cubiertos</div>
+        <div class="a-card" style="padding:0;overflow:hidden">
+          <table class="a-table">
+            <thead><tr><th>Código</th><th>Atributo</th><th>Evidencia en el proyecto</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><strong>AG-C09</strong></td>
+                <td>Diseño y Desarrollo de Soluciones</td>
+                <td>Solución integral para problema complejo de recomendación alimenticia personalizada</td>
+              </tr>
+              <tr>
+                <td><strong>AG-C11</strong></td>
+                <td>Uso de Herramientas Modernas</td>
+                <td>Aplicación de Python, PuLP, scikit-learn, FastAPI y SQLAlchemy</td>
+              </tr>
+              <tr>
+                <td><strong>AG-C12</strong></td>
+                <td>Teoría y Fundamentos</td>
+                <td>Aplicación de teoría de IA: sistemas expertos, optimización lineal, clustering y cálculo nutricional</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- /tab-diseno -->
+
+
+    <!-- ════════════════════════════════════════════════════
+         TAB 2 — BITÁCORA DE DECISIONES
+    ════════════════════════════════════════════════════ -->
+    <div id="tab-bitacora" class="tab-pane">
+
+      <div class="a-section">
+        <div class="a-section-title">🤖 Técnicas de IA elegidas</div>
+        <div class="a-card" style="padding:0;overflow:hidden">
+          <table class="a-table">
+            <thead><tr><th>Capa</th><th>Técnica</th><th>Uso en el sistema</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td>Mifflin-St Jeor</td><td>Cálculo de TMB y GET a partir del perfil del usuario</td></tr>
+              <tr><td>2</td><td>Sistema Experto con reglas</td><td>Ajuste de pesos de ingredientes según salud y contexto del momento</td></tr>
+              <tr><td>3</td><td>K-Means Clustering</td><td>Validación de coherencia de las 8 categorías del dataset (precomputado)</td></tr>
+              <tr><td>4</td><td>Programación Lineal Mixta Entera (MILP)</td><td>Selección óptima de ingredientes y cantidades por comida mediante PuLP + CBC</td></tr>
+              <tr><td>5</td><td>Generador de nombres con plantillas</td><td>Nombres descriptivos de platillos como fallback sin dependencia de LLM externo</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="a-section">
+        <div class="a-section-title">⚖️ Decisiones técnicas específicas</div>
+
+        <div class="dec-card">
+          <div>
+            <div class="dec-badge">Fórmula calórica</div>
+            <div class="dec-comp">Cálculo del TMB</div>
+          </div>
+          <div>
+            <strong style="font-size:.78rem">✓ Mifflin-St Jeor (1990)</strong>
+            <div class="dec-decision" style="margin-top:4px">Elegida sobre Harris-Benedict (1919)</div>
+          </div>
+          <div class="dec-reason">
+            Mifflin-St Jeor es más precisa para la población general moderna; Harris-Benedict sobreestima
+            el gasto metabólico en personas sedentarias contemporáneas.
+          </div>
+        </div>
+
+        <div class="dec-card">
+          <div>
+            <div class="dec-badge">Tipo de reglas</div>
+            <div class="dec-comp">Sistema Experto</div>
+          </div>
+          <div>
+            <strong style="font-size:.78rem">✓ Soft rules + Hard rules</strong>
+            <div class="dec-decision" style="margin-top:4px">Descartado: solo hard rules</div>
+          </div>
+          <div class="dec-reason">
+            Las soft rules (que modifican pesos de selección) evitan que el optimizador llegue a un
+            estado infactible por restricciones contradictorias. Un sistema con solo hard rules es
+            frágil ante perfiles extremos.
+          </div>
+        </div>
+
+        <div class="dec-card">
+          <div>
+            <div class="dec-badge">Motor de reglas</div>
+            <div class="dec-comp">Implementación</div>
+          </div>
+          <div>
+            <strong style="font-size:.78rem">✓ Clase Python propia</strong>
+            <div class="dec-decision" style="margin-top:4px">Descartada: librería <code>experta</code></div>
+          </div>
+          <div class="dec-reason">
+            Mayor control sobre el comportamiento, mejor auditabilidad y valor pedagógico.
+            <code>experta</code> añade complejidad de motor de inferencia innecesaria para 15 reglas
+            con estructura predecible.
+          </div>
+        </div>
+
+        <div class="dec-card">
+          <div>
+            <div class="dec-badge">Optimización</div>
+            <div class="dec-comp">Selección de ingredientes</div>
+          </div>
+          <div>
+            <strong style="font-size:.78rem">✓ Programación lineal (PuLP)</strong>
+            <div class="dec-decision" style="margin-top:4px">Descartados: algoritmos genéticos, hill climbing</div>
+          </div>
+          <div class="dec-reason">
+            MILP garantiza la solución matemáticamente óptima dentro de las restricciones, es
+            transparente y reproducible. Los metaheurísticos no garantizan optimalidad y son más
+            difíciles de auditar académicamente.
+          </div>
+        </div>
+
+      </div>
+
+      <div class="a-section">
+        <div class="a-section-title">📂 Decisiones sobre el dataset</div>
+        <div class="a-card">
+          <h3>Construcción propia vs. dataset público</h3>
+          <p>
+            Se optó por construir un dataset propio de 81 ingredientes en lugar de usar bases de datos
+            genéricas. Esto permite incluir ingredientes andinos peruanos (tarwi, kiwicha, maca, olluco)
+            con valores verificados específicamente para el contexto local.
+          </p>
+        </div>
+        <div class="a-card" style="padding:0;overflow:hidden;margin-top:0">
+          <table class="a-table">
+            <thead><tr><th>Decisión</th><th>Justificación</th></tr></thead>
+            <tbody>
+              <tr>
+                <td>Base de medición en 100g</td>
+                <td>Facilita los cálculos proporcionales del optimizador lineal (<code>g × valor/100</code>)</td>
+              </tr>
+              <tr>
+                <td>Estado cocido</td>
+                <td>Los valores nutricionales reflejan el estado real de consumo, no el ingrediente crudo</td>
+              </tr>
+              <tr>
+                <td>Validación con K-Means</td>
+                <td>Clustering sobre macros confirmó que las 8 categorías definidas son coherentes con los datos</td>
+              </tr>
+              <tr>
+                <td>Columna <code>grupo_intercambiable</code></td>
+                <td>Evita que el optimizador seleccione dos fuentes del mismo grupo (ej. pollo y pavo en la misma comida)</td>
+              </tr>
+              <tr>
+                <td>Columna <code>comidas_recomendadas</code></td>
+                <td>Permite que el Sistema Experto filtre ingredientes según el momento del día</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="a-section">
+        <div class="a-section-title">⚠️ Riesgos identificados y mitigaciones</div>
+        <div class="a-card" style="padding:0;overflow:hidden">
+          <table class="a-table">
+            <thead><tr><th>Riesgo</th><th>Impacto</th><th>Mitigación implementada</th></tr></thead>
+            <tbody>
+              <tr>
+                <td>PuLP devuelve estado "infactible"</td>
+                <td><strong style="color:#e74c3c">Alto</strong></td>
+                <td>
+                  Soft rules relajan preferencias sin bloquear solución + sistema de fallback automático
+                  que incrementa el límite máximo de ingredientes por comida hasta encontrar una
+                  solución factible (<code>MAX_INTENTOS_FALLBACK = 2</code>)
+                </td>
+              </tr>
+              <tr>
+                <td>K-Means inestable por pocos datos</td>
+                <td><strong style="color:#f39c12">Bajo</strong></td>
+                <td>
+                  81 ingredientes son suficientes para clustering estable en 8 categorías;
+                  <code>random_state</code> fijo garantiza reproducibilidad del análisis
+                </td>
+              </tr>
+              <tr>
+                <td>Déficit calórico peligroso</td>
+                <td><strong style="color:#e74c3c">Alto</strong></td>
+                <td>
+                  Piso de seguridad (regla E1): 1 500 kcal para hombres y 1 200 kcal para mujeres.
+                  Advertencia visual en la pantalla de perfil y en el panel de auditoría del plan
+                </td>
+              </tr>
+              <tr>
+                <td>Repetición de ingredientes entre días</td>
+                <td><strong style="color:#f39c12">Medio</strong></td>
+                <td>
+                  El orquestador penaliza (×0.3 de peso) los ingredientes usados en los 2 días
+                  anteriores para forzar variedad en el plan diario
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- /tab-bitacora -->
+
+
+    <!-- ════════════════════════════════════════════════════
+         TAB 3 — CATÁLOGO DE REGLAS
+    ════════════════════════════════════════════════════ -->
+    <div id="tab-catalogo" class="tab-pane">
+
+      <div class="stat-grid">
+        <div class="stat-box"><span class="stat-num">15</span><span class="stat-label">Reglas activas</span></div>
+        <div class="stat-box"><span class="stat-num">7</span><span class="stat-label"><span class="badge badge-soft">SOFT</span></span></div>
+        <div class="stat-box"><span class="stat-num">8</span><span class="stat-label"><span class="badge badge-hard">HARD</span></span></div>
+        <div class="stat-box"><span class="stat-num">5</span><span class="stat-label">Grupos (A – E)</span></div>
+      </div>
+
+      <div class="a-section">
+        <div class="a-section-title">📊 Resumen de grupos</div>
+        <div class="a-card" style="padding:0;overflow:hidden">
+          <table class="a-table">
+            <thead>
+              <tr><th>Grupo</th><th>Tipo</th><th>Cant.</th><th>Ubicación en el código</th><th>Descripción</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>A</strong></td>
+                <td><span class="badge badge-soft">SOFT</span></td>
+                <td>4</td>
+                <td><code>_aplicar_reglas_salud()</code></td>
+                <td>Penalizan o favorecen ingredientes según salud del perfil</td>
+              </tr>
+              <tr>
+                <td><strong>B</strong></td>
+                <td><span class="badge badge-soft">SOFT</span></td>
+                <td>3</td>
+                <td><code>_aplicar_reglas_contexto()</code></td>
+                <td>Ajustan pesos según el momento de la comida y el objetivo</td>
+              </tr>
+              <tr>
+                <td><strong>C</strong></td>
+                <td><span class="badge badge-hard">HARD</span></td>
+                <td>4</td>
+                <td><code>_construir_y_resolver()</code> — PuLP</td>
+                <td>Restricciones obligatorias de estructura por tipo de comida</td>
+              </tr>
+              <tr>
+                <td><strong>D</strong></td>
+                <td><span class="badge badge-hard">HARD</span></td>
+                <td>3</td>
+                <td><code>REGLAS_OBJETIVO</code> + <code>calcular_targets_diarios()</code></td>
+                <td>Distribución calórica y de macros según objetivo nutricional</td>
+              </tr>
+              <tr>
+                <td><strong>E</strong></td>
+                <td><span class="badge badge-hard">HARD</span></td>
+                <td>1</td>
+                <td><code>MINIMO_KCAL_SEGURIDAD</code> + <code>calcular_targets_diarios()</code></td>
+                <td>Piso mínimo de seguridad calórica para prevenir déficits peligrosos</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Grupo A -->
+      <div class="a-section">
+        <div class="a-section-title">Grupo A — Reglas de salud &nbsp;<span class="badge badge-soft">SOFT</span></div>
+        <div class="a-card">
+          <div class="rule-group-header">
+            <div class="rule-group-letter soft">A</div>
+            <div>
+              <div class="rule-group-title">Modifican pesos de selección de ingredientes según salud del perfil</div>
+              <div class="rule-group-sub">Ubicación: <code>SistemaExperto._aplicar_reglas_salud()</code> · ai_engine.py</div>
+            </div>
+          </div>
+          <table class="a-table">
+            <thead>
+              <tr><th>ID</th><th>Condición de disparo</th><th>Acción sobre los datos</th><th>Efecto en el plan</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>A1</strong></td>
+                <td>objetivo = <em>perder_grasa</em></td>
+                <td>Peso × 0.5 a ingredientes con grasa saturada &gt; 7 g/100g</td>
+                <td>Penaliza alimentos ricos en grasa saturada; el optimizador los evita en planes de adelgazamiento</td>
+              </tr>
+              <tr>
+                <td><strong>A2</strong></td>
+                <td>objetivo = <em>ganar_musculo</em> Y categoría = Proteína</td>
+                <td>Peso × 1.5 a proteínas con ≥ 25 g proteína/100g</td>
+                <td>Favorece fuentes proteicas de alta densidad para maximizar síntesis muscular</td>
+              </tr>
+              <tr>
+                <td><strong>A3</strong></td>
+                <td>edad &gt; 50</td>
+                <td>Peso × 0.5 a ingredientes con grasa saturada &gt; 5 g/100g</td>
+                <td>Protección cardiovascular adicional para adultos mayores (umbral más estricto que A1)</td>
+              </tr>
+              <tr>
+                <td><strong>A4</strong></td>
+                <td>edad &gt; 50</td>
+                <td>Peso × 1.5 a: palta, nueces, chía, salmón, jurel, caballa, almendras</td>
+                <td>Potencia grasas saludables (omega-3, monoinsaturadas) beneficiosas en adultos mayores</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Grupo B -->
+      <div class="a-section">
+        <div class="a-section-title">Grupo B — Reglas de contexto &nbsp;<span class="badge badge-soft">SOFT</span></div>
+        <div class="a-card">
+          <div class="rule-group-header">
+            <div class="rule-group-letter soft">B</div>
+            <div>
+              <div class="rule-group-title">Ajustan pesos según el momento de la comida y el objetivo</div>
+              <div class="rule-group-sub">Ubicación: <code>SistemaExperto._aplicar_reglas_contexto()</code> · ai_engine.py</div>
+            </div>
+          </div>
+          <table class="a-table">
+            <thead>
+              <tr><th>ID</th><th>Condición de disparo</th><th>Acción sobre los datos</th><th>Efecto en el plan</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>B1</strong></td>
+                <td>comida = desayuno Y objetivo = <em>ganar_musculo</em></td>
+                <td>Habilita ingredientes cárnicos para el desayuno</td>
+                <td>Permite alta ingesta proteica matutina orientada a hipertrofia</td>
+              </tr>
+              <tr>
+                <td><strong>B2</strong></td>
+                <td>comida = snack (siempre)</td>
+                <td>Peso × 1.5 a ingredientes con "snack" en <code>comidas_recomendadas</code></td>
+                <td>Prioriza alimentos específicamente aptos para colaciones ligeras</td>
+              </tr>
+              <tr>
+                <td><strong>B3</strong></td>
+                <td>comida = cena Y objetivo = <em>perder_grasa</em></td>
+                <td>Peso × 1.5 a pescado magro y hojas verdes; × 0.7 a carnes rojas</td>
+                <td>Produce una cena ligera y fácil de digerir, alineada con el déficit calórico</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Grupo C -->
+      <div class="a-section">
+        <div class="a-section-title">Grupo C — Estructura obligatoria por comida &nbsp;<span class="badge badge-hard">HARD</span></div>
+        <div class="a-card">
+          <div class="rule-group-header">
+            <div class="rule-group-letter hard">C</div>
+            <div>
+              <div class="rule-group-title">Restricciones de estructura mínima implementadas como restricciones MILP</div>
+              <div class="rule-group-sub">Ubicación: <code>_construir_y_resolver()</code> · Optimizador PuLP · ai_engine.py</div>
+            </div>
+          </div>
+          <table class="a-table">
+            <thead>
+              <tr><th>ID</th><th>Comida</th><th>Estructura obligatoria</th><th>Implementación en el modelo MILP</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>C1</strong></td>
+                <td>Desayuno</td>
+                <td>Mínimo 1 Carbohidrato</td>
+                <td><code>lpSum(b[i] for i in ids_carbos) ≥ 1</code></td>
+              </tr>
+              <tr>
+                <td><strong>C2</strong></td>
+                <td>Almuerzo</td>
+                <td>Mínimo 1 Proteína + 1 Carbohidrato + 1 Verdura</td>
+                <td>3 restricciones <code>lpSum ≥ 1</code> independientes, una por categoría</td>
+              </tr>
+              <tr>
+                <td><strong>C3</strong></td>
+                <td>Cena</td>
+                <td>Mínimo 1 Proteína + 1 Verdura</td>
+                <td>2 restricciones <code>lpSum ≥ 1</code> independientes</td>
+              </tr>
+              <tr>
+                <td><strong>C4</strong></td>
+                <td>Snack</td>
+                <td>Sin estructura rígida — configuración contextual por objetivo</td>
+                <td>Categorías permitidas definidas en <code>CATEGORIAS_SNACK[objetivo]</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Grupo D -->
+      <div class="a-section">
+        <div class="a-section-title">Grupo D — Distribución de macros por objetivo &nbsp;<span class="badge badge-hard">HARD</span></div>
+        <div class="a-card">
+          <div class="rule-group-header">
+            <div class="rule-group-letter hard">D</div>
+            <div>
+              <div class="rule-group-title">Distribución calórica y porcentual de macronutrientes según objetivo nutricional</div>
+              <div class="rule-group-sub">Ubicación: <code>REGLAS_OBJETIVO</code> · <code>calcular_targets_diarios()</code> · ai_engine.py</div>
+            </div>
+          </div>
+          <table class="a-table">
+            <thead>
+              <tr><th>ID</th><th>Objetivo</th><th>Ajuste calórico</th><th>Proteína</th><th>Carbos</th><th>Grasa</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>D1</strong></td>
+                <td>perder_grasa</td>
+                <td>GET × 0.80 — déficit del 20%</td>
+                <td>40%</td><td>35%</td><td>25%</td>
+              </tr>
+              <tr>
+                <td><strong>D2</strong></td>
+                <td>mantener</td>
+                <td>GET × 1.00 — mantenimiento</td>
+                <td>30%</td><td>45%</td><td>25%</td>
+              </tr>
+              <tr>
+                <td><strong>D3</strong></td>
+                <td>ganar_musculo</td>
+                <td>GET × 1.15 — superávit del 15%</td>
+                <td>35%</td><td>40%</td><td>25%</td>
+              </tr>
+            </tbody>
+          </table>
+          <p style="font-size:.77rem;color:var(--gris-400);margin-top:12px;padding-top:10px;border-top:1px solid var(--gris-200)">
+            Conversión a gramos: Proteína y carbohidratos → kcal × % ÷ 4 cal/g &nbsp;·&nbsp; Grasa → kcal × % ÷ 9 cal/g
+          </p>
+        </div>
+      </div>
+
+      <!-- Grupo E -->
+      <div class="a-section">
+        <div class="a-section-title">Grupo E — Seguridad calórica &nbsp;<span class="badge badge-hard">HARD</span></div>
+        <div class="a-card">
+          <div class="rule-group-header">
+            <div class="rule-group-letter hard">E</div>
+            <div>
+              <div class="rule-group-title">Piso mínimo de seguridad para prevenir déficits calóricos peligrosos</div>
+              <div class="rule-group-sub">Ubicación: <code>MINIMO_KCAL_SEGURIDAD</code> · <code>calcular_targets_diarios()</code> · ai_engine.py</div>
+            </div>
+          </div>
+          <table class="a-table">
+            <thead>
+              <tr><th>ID</th><th>Condición de disparo</th><th>Acción</th><th>Valores de referencia</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>E1</strong></td>
+                <td>calorías calculadas &lt; mínimo de seguridad para el sexo</td>
+                <td><code>cal_final = max(cal_calculadas, mínimo)</code> + advertencia visual al usuario</td>
+                <td>Hombres: <strong>1 500 kcal</strong> &nbsp;·&nbsp; Mujeres: <strong>1 200 kcal</strong></td>
+              </tr>
+            </tbody>
+          </table>
+          <div style="background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:12px 14px;margin-top:14px;font-size:.8rem;color:#6d4c00;line-height:1.55">
+            <strong>Caso típico de activación:</strong> mujer sedentaria con objetivo <em>perder_grasa</em>.
+            Ejemplo: GET = 1 304 kcal → ajuste 0.80 → 1 043 kcal &lt; 1 200 kcal → la regla E1 fija el
+            objetivo final en <strong>1 200 kcal</strong> y muestra la advertencia en pantalla.
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /tab-catalogo -->
+
+
+    <!-- ════════════════════════════════════════════════════
+         TAB 4 — VISUALIZACIONES
+    ════════════════════════════════════════════════════ -->
+    <div id="tab-viz" class="tab-pane">
+
+      <!-- ── EDA ── -->
+      <div class="a-section-title" style="margin-top:8px">📦 Análisis exploratorio del dataset (EDA)</div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+        <div class="a-card">
+          <div style="font-size:.72rem;font-weight:700;color:var(--gris-400);text-transform:uppercase;margin-bottom:12px">Ingredientes por categoría</div>
+          <canvas id="chartDonut" height="260"></canvas>
+        </div>
+        <div class="a-card">
+          <div style="font-size:.72rem;font-weight:700;color:var(--gris-400);text-transform:uppercase;margin-bottom:12px">Distribución de índice glucémico</div>
+          <canvas id="chartIG" height="260"></canvas>
+        </div>
+      </div>
+
+      <div class="a-card" style="margin-bottom:16px">
+        <div style="font-size:.72rem;font-weight:700;color:var(--gris-400);text-transform:uppercase;margin-bottom:12px">Macros promedio por categoría (g/100g)</div>
+        <canvas id="chartMacros" height="200"></canvas>
+      </div>
+
+      <div class="a-card" style="margin-bottom:24px">
+        <div style="font-size:.72rem;font-weight:700;color:var(--gris-400);text-transform:uppercase;margin-bottom:12px">Top 7 ingredientes por proteína (g/100g)</div>
+        <canvas id="chartTopProt" height="200"></canvas>
+      </div>
+
+      <!-- ── K-Means ── -->
+      <div class="a-section-title">🤖 K-Means Clustering (Celda 8 del notebook)</div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+        <div class="a-card">
+          <div style="font-size:.72rem;font-weight:700;color:var(--gris-400);text-transform:uppercase;margin-bottom:12px">Método del codo — Inercia vs k</div>
+          <canvas id="chartElbow" height="220"></canvas>
+        </div>
+        <div class="a-card">
+          <div style="font-size:.72rem;font-weight:700;color:var(--gris-400);text-transform:uppercase;margin-bottom:12px">Coeficiente de silueta vs k</div>
+          <canvas id="chartSilueta" height="220"></canvas>
+        </div>
+      </div>
+
+      <div class="a-card" style="margin-bottom:24px">
+        <div style="font-size:.72rem;font-weight:700;color:var(--gris-400);text-transform:uppercase;margin-bottom:4px">Scatter PCA — 81 ingredientes proyectados en 2D (k=4)</div>
+        <div id="pcaVar" style="font-size:.7rem;color:var(--gris-400);margin-bottom:10px"></div>
+        <canvas id="chartPCA" height="340"></canvas>
+      </div>
+
+      <!-- ── VV&E ── -->
+      <div class="a-section-title">✅ Suite de Validación, Verificación y Evaluación (VV&E)</div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+        <div class="a-card">
+          <div style="font-size:.72rem;font-weight:700;color:var(--gris-400);text-transform:uppercase;margin-bottom:12px">Desviación calórica por perfil (%)</div>
+          <canvas id="chartDesvKcal" height="160"></canvas>
+        </div>
+        <div class="a-card">
+          <div style="font-size:.72rem;font-weight:700;color:var(--gris-400);text-transform:uppercase;margin-bottom:12px">Desviación de macros por perfil (%)</div>
+          <canvas id="chartDesvMacros" height="200"></canvas>
+        </div>
+      </div>
+
+      <div class="a-card" style="margin-bottom:16px">
+        <div style="font-size:.72rem;font-weight:700;color:var(--gris-400);text-transform:uppercase;margin-bottom:12px">Métricas globales del sistema</div>
+        <canvas id="chartMetricas" height="160"></canvas>
+      </div>
+
+      <div id="vveTable" style="margin-bottom:16px"></div>
+
+    </div><!-- /tab-viz -->
+
+  </div><!-- /.admin-content -->
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script>
+    if (localStorage.getItem('np_username') !== 'admin') window.location.href = '/';
+
+    function showTab(name, btn) {
+      document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('tab-' + name).classList.add('active');
+      btn.classList.add('active');
+    }
+
+    function cerrarSesion() {
+      localStorage.removeItem('np_username');
+      window.location.href = '/';
+    }
+
+    // ── Paletas ──────────────────────────────────────────────
+    const CAT_COLORS = {
+      Proteina:'#e74c3c', Carbohidrato:'#f39c12', Verdura:'#2ecc71',
+      Fruta:'#e67e22', Grasa:'#9b59b6', Lacteo:'#3498db',
+      Condimento:'#95a5a6', Bebida:'#1abc9c',
+    };
+    const CLUSTER_COLORS = ['#e74c3c','#3498db','#2ecc71','#f39c12'];
+    const PERFIL_LABELS  = ['Hombre joven\nganar músculo','Mujer adulta\nperder grasa',
+                            'Adulto mayor\nmantener peso','Mujer activa\nganar músculo'];
+
+    const axisOpts = (beginAtZero = true) => ({
+      y: { beginAtZero, grid:{ color:'#f1f1f1' }, ticks:{ font:{ size:11 } } },
+      x: { grid:{ display:false }, ticks:{ font:{ size:11 } } },
+    });
+
+    let chartsInit = false;
+
+    async function initCharts() {
+      if (chartsInit) return;
+      chartsInit = true;
+
+      const [statsRes, kmRes, vveRes] = await Promise.all([
+        fetch('/api/admin/stats'),
+        fetch('/api/admin/kmeans'),
+        fetch('/api/admin/vve'),
+      ]);
+      const stats = await statsRes.json();
+      const km    = await kmRes.json();
+      const vve   = await vveRes.json();
+
+      const cats   = Object.keys(stats.por_categoria);
+      const cColors = cats.map(c => CAT_COLORS[c] || '#aaa');
+
+      // ① Donut — ingredientes por categoría
+      new Chart(document.getElementById('chartDonut'), {
+        type: 'doughnut',
+        data: {
+          labels: cats,
+          datasets: [{ data: cats.map(c => stats.por_categoria[c].count),
+                       backgroundColor: cColors, borderWidth:2, borderColor:'#fff' }]
+        },
+        options: { cutout:'60%',
+          plugins:{ legend:{ position:'bottom', labels:{ font:{size:11}, padding:10 } } } }
+      });
+
+      // ② Bar — índice glucémico
+      const igOrder = ['bajo','medio','alto','ninguno'];
+      const igColors = {'bajo':'#2ecc71','medio':'#f39c12','alto':'#e74c3c','ninguno':'#95a5a6'};
+      new Chart(document.getElementById('chartIG'), {
+        type: 'bar',
+        data: {
+          labels: igOrder.map(k => k.charAt(0).toUpperCase() + k.slice(1)),
+          datasets: [{ label:'Ingredientes', data: igOrder.map(k => stats.ig_distribucion[k] || 0),
+                       backgroundColor: igOrder.map(k => igColors[k]), borderRadius:6 }]
+        },
+        options: { plugins:{ legend:{ display:false } }, scales: axisOpts() }
+      });
+
+      // ③ Grouped bar — macros por categoría
+      new Chart(document.getElementById('chartMacros'), {
+        type: 'bar',
+        data: {
+          labels: cats,
+          datasets: [
+            { label:'Proteína (g)', data: cats.map(c => stats.por_categoria[c].avg_proteina),
+              backgroundColor:'#3b82f6', borderRadius:4 },
+            { label:'Carbos (g)',   data: cats.map(c => stats.por_categoria[c].avg_carbos),
+              backgroundColor:'#f59e0b', borderRadius:4 },
+            { label:'Grasa (g)',    data: cats.map(c => stats.por_categoria[c].avg_grasa),
+              backgroundColor:'#ef4444', borderRadius:4 },
+          ]
+        },
+        options: { plugins:{ legend:{ position:'bottom', labels:{ font:{size:11}, padding:10 } } },
+                   scales: axisOpts() }
+      });
+
+      // ④ Horizontal bar — top proteínas
+      new Chart(document.getElementById('chartTopProt'), {
+        type: 'bar',
+        data: {
+          labels: stats.top_proteina.map(i => i.nombre),
+          datasets: [{ label:'Proteína (g/100g)', data: stats.top_proteina.map(i => i.proteina_g),
+                       backgroundColor: stats.top_proteina.map(i => CAT_COLORS[i.categoria]||'#aaa'),
+                       borderRadius:6 }]
+        },
+        options: { indexAxis:'y', plugins:{ legend:{ display:false } },
+                   scales:{ x:{ beginAtZero:true, grid:{color:'#f1f1f1'}, ticks:{font:{size:11}} },
+                             y:{ grid:{display:false}, ticks:{font:{size:11}} } } }
+      });
+
+      // ⑤ Elbow — inercia vs k
+      new Chart(document.getElementById('chartElbow'), {
+        type: 'line',
+        data: {
+          labels: km.rango_k,
+          datasets: [{ label:'Inercia', data: km.inercias, borderColor:'#3b82f6',
+                       backgroundColor:'rgba(59,130,246,.1)', tension:.3, fill:true,
+                       pointBackgroundColor:'#3b82f6', pointRadius:5 }]
+        },
+        options: { plugins:{ legend:{ display:false } }, scales: axisOpts() }
+      });
+
+      // ⑥ Silueta vs k (con línea vertical en k=4)
+      new Chart(document.getElementById('chartSilueta'), {
+        type: 'line',
+        data: {
+          labels: km.rango_k,
+          datasets: [
+            { label:'Silueta', data: km.siluetas, borderColor:'#e74c3c',
+              backgroundColor:'rgba(231,76,60,.1)', tension:.3, fill:true,
+              pointBackgroundColor: km.rango_k.map(k => k === km.k_usado ? '#2ecc71' : '#e74c3c'),
+              pointRadius: km.rango_k.map(k => k === km.k_usado ? 8 : 5) },
+          ]
+        },
+        options: {
+          plugins: {
+            legend:{ display:false },
+            tooltip:{ callbacks:{ label: ctx => `Silueta: ${ctx.raw}${ctx.dataIndex === km.k_usado-2 ? ' ← k usado' : ''}` } }
+          },
+          scales: axisOpts(false)
+        }
+      });
+
+      // ⑦ PCA Scatter — 81 ingredientes
+      document.getElementById('pcaVar').textContent =
+        `PC1 explica ${km.var_exp[0]}% de varianza · PC2 explica ${km.var_exp[1]}% · k=4 clusters`;
+
+      const scatterDatasets = [0,1,2,3].map(c => ({
+        label: `Cluster ${c+1}`,
+        data:  km.scatter.filter(p => p.cluster === c).map(p => ({ x:p.x, y:p.y, nombre:p.nombre, cat:p.categoria })),
+        backgroundColor: CLUSTER_COLORS[c] + 'bb',
+        pointRadius: 7,
+        pointHoverRadius: 9,
+      }));
+      scatterDatasets.push({
+        label: 'Centros',
+        data:  km.centros.map(c => ({ x:c.x, y:c.y })),
+        backgroundColor: '#000',
+        pointStyle: 'crossRot',
+        pointRadius: 10,
+        pointBorderWidth: 2.5,
+      });
+
+      new Chart(document.getElementById('chartPCA'), {
+        type: 'scatter',
+        data: { datasets: scatterDatasets },
+        options: {
+          plugins: {
+            legend: { position:'bottom', labels:{ font:{size:11}, padding:10 } },
+            tooltip: { callbacks: {
+              label: ctx => ctx.raw.nombre
+                ? `${ctx.raw.nombre} (${ctx.raw.cat}) [${ctx.raw.x}, ${ctx.raw.y}]`
+                : `Centro ${ctx.dataIndex+1}`
+            }}
+          },
+          scales: {
+            x: { title:{ display:true, text:'PC1', font:{size:11} }, grid:{color:'#f1f1f1'}, ticks:{font:{size:10}} },
+            y: { title:{ display:true, text:'PC2', font:{size:11} }, grid:{color:'#f1f1f1'}, ticks:{font:{size:10}} },
+          }
+        }
+      });
+
+      // ⑧ VV&E — desviación calórica (horizontal)
+      const perfiles = vve.perfiles;
+      const pLabels  = ['♂ Joven — Ganar músculo', '♀ Adulta — Perder grasa',
+                        '♂ Mayor — Mantener peso', '♀ Activa — Ganar músculo'];
+      const hAxisOpts = {
+        x: { beginAtZero:false, grid:{color:'#f1f1f1'}, ticks:{font:{size:11}},
+             title:{display:true, text:'Desviación (%)', font:{size:10}} },
+        y: { grid:{display:false}, ticks:{font:{size:12}} },
+      };
+
+      new Chart(document.getElementById('chartDesvKcal'), {
+        type: 'bar',
+        data: {
+          labels: pLabels,
+          datasets: [{
+            label: 'Desviación kcal (%)',
+            data:  perfiles.map(p => p.desv_kcal),
+            backgroundColor: perfiles.map(p =>
+              Math.abs(p.desv_kcal) <= 5 ? '#2ecc71cc' : '#e74c3ccc'),
+            borderRadius: 6,
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          plugins: { legend:{ display:false },
+            tooltip:{ callbacks:{ label: ctx =>
+              ` ${ctx.raw > 0 ? '+' : ''}${ctx.raw}%  (target: ${perfiles[ctx.dataIndex].kcal_target} kcal)` }} },
+          scales: hAxisOpts,
+        }
+      });
+
+      // ⑨ VV&E — desviación de macros (horizontal agrupado)
+      new Chart(document.getElementById('chartDesvMacros'), {
+        type: 'bar',
+        data: {
+          labels: pLabels,
+          datasets: [
+            { label:'Proteína (%)', data: perfiles.map(p => p.desv_proteina),
+              backgroundColor:'#3b82f6cc', borderRadius:4 },
+            { label:'Carbos (%)',   data: perfiles.map(p => p.desv_carbos),
+              backgroundColor:'#f59e0bcc', borderRadius:4 },
+            { label:'Grasa (%)',    data: perfiles.map(p => p.desv_grasa),
+              backgroundColor:'#ef4444cc', borderRadius:4 },
+          ]
+        },
+        options: {
+          indexAxis: 'y',
+          plugins: { legend:{ position:'bottom', labels:{ font:{size:11}, padding:10 } } },
+          scales: hAxisOpts,
+        }
+      });
+
+      // ⑩ Métricas globales
+      const comTot  = perfiles.reduce((s,p) => s + p.num_comidas, 0);
+      const factPct = Math.round(perfiles.filter(p => p.factible).length / perfiles.length * 100);
+      const avgIng  = Math.round(perfiles.reduce((s,p) => s + p.ing_unicos, 0) / perfiles.length);
+      new Chart(document.getElementById('chartMetricas'), {
+        type: 'bar',
+        data: {
+          labels: ['Factibilidad (%)', 'Comidas generadas', 'Ing. únicos/plan (avg)', 'Silueta K-Means (×100)'],
+          datasets: [{ label:'Valor',
+            data:  [ factPct, comTot, avgIng, Math.round(km.silueta_k4 * 100) ],
+            backgroundColor: ['#2ecc71','#3b82f6','#f39c12','#9b59b6'],
+            borderRadius: 6 }]
+        },
+        options: { indexAxis:'y', plugins:{ legend:{ display:false } },
+                   scales:{ x:{ beginAtZero:true, grid:{color:'#f1f1f1'}, ticks:{font:{size:11}} },
+                             y:{ grid:{display:false}, ticks:{font:{size:11}} } } }
+      });
+
+      // ⑪ Tabla resumen VV&E
+      document.getElementById('vveTable').innerHTML = `
+        <div class="a-card" style="padding:0;overflow:hidden">
+          <table class="a-table">
+            <thead><tr>
+              <th>Perfil</th><th>Target (kcal)</th><th>Real (kcal)</th>
+              <th>Desv. kcal</th><th>Comidas</th><th>Ing. únicos</th><th>Estado</th>
+            </tr></thead>
+            <tbody>
+              ${perfiles.map(p => `
+                <tr>
+                  <td>${p.label.replace('\n','<br>')}</td>
+                  <td>${p.kcal_target}</td><td>${p.kcal_real}</td>
+                  <td style="color:${Math.abs(p.desv_kcal)<=5?'#2ecc71':'#e74c3c'};font-weight:700">
+                    ${p.desv_kcal > 0 ? '+' : ''}${p.desv_kcal}%
+                  </td>
+                  <td>${p.num_comidas}</td><td>${p.ing_unicos}</td>
+                  <td>${p.factible ? '✅ OK' : '⚠️ Parcial'}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`;
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,554 @@
+<!--
+  plan.html — Plan nutricional del día
+  Ruta: /plan
+  Función: muestra las 4 comidas generadas por el motor de IA.
+           Panel lateral de auditoría explica el razonamiento del Sistema Experto:
+           cálculo calórico (Celda 4), distribución de macros (Celda 5) y
+           reglas activadas por comida (Celda 7).
+  API: GET /api/usuario/{username}/plan
+       DELETE /api/usuario/{username}/plan/hoy
+-->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>NutriPerú — Mi Plan</title>
+  <link rel="stylesheet" href="/static/style.css"/>
+  <style>
+    .audit-layout {
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 0 16px;
+    }
+    .audit-layout > .container {
+      flex: 1;
+      max-width: none;
+      margin: 0;
+      padding-left: 0;
+      padding-right: 0;
+    }
+    .audit-panel {
+      width: 256px;
+      flex-shrink: 0;
+      padding-top: 16px;
+    }
+    .audit-panel-title {
+      font-size: .68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--gris-400);
+      margin: 0 0 8px 2px;
+    }
+    .audit-section-title {
+      font-size: .68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--gris-400);
+      margin: 0 0 10px;
+    }
+    .audit-step {
+      display: flex;
+      gap: 8px;
+      padding-bottom: 9px;
+      margin-bottom: 9px;
+      border-bottom: 1px solid var(--gris-200);
+    }
+    .audit-step:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+    .audit-num { font-size: .85rem; min-width: 18px; padding-top: 1px; }
+    .audit-step-label {
+      font-size: .73rem;
+      font-weight: 600;
+      color: var(--gris-700);
+      margin-bottom: 2px;
+    }
+    .audit-formula {
+      font-size: .67rem;
+      font-family: 'Courier New', monospace;
+      color: var(--gris-400);
+      line-height: 1.5;
+      word-break: break-word;
+    }
+    .audit-result { font-size: .73rem; font-weight: 600; color: var(--gris-700); margin-top: 3px; }
+    .audit-tag {
+      font-family: inherit;
+      background: #e8f5e9;
+      color: #2e7d32;
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: .63rem;
+      font-weight: 600;
+    }
+    .audit-warn-box {
+      background: #fff8e1;
+      border: 1px solid #ffe082;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: .7rem;
+      color: #e65100;
+      margin-top: 6px;
+      line-height: 1.5;
+    }
+    .audit-macro-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 7px;
+      font-size: .73rem;
+      color: var(--gris-700);
+    }
+    .audit-macro-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .audit-macro-dot.p { background: #3b82f6; }
+    .audit-macro-dot.c { background: #f59e0b; }
+    .audit-macro-dot.g { background: #ef4444; }
+    .audit-macro-label { flex: 1; }
+    .audit-macro-formula {
+      font-family: 'Courier New', monospace;
+      font-size: .63rem;
+      color: var(--gris-400);
+    }
+    .audit-macro-g { font-weight: 700; min-width: 34px; text-align: right; }
+    .audit-note {
+      font-size: .63rem;
+      color: var(--gris-400);
+      margin-top: 8px;
+      padding-top: 6px;
+      border-top: 1px solid var(--gris-200);
+    }
+    .audit-comida { margin-bottom: 9px; }
+    .audit-comida:last-child { margin-bottom: 0; }
+    .audit-comida-title {
+      font-size: .71rem;
+      font-weight: 700;
+      color: var(--gris-700);
+      margin-bottom: 3px;
+    }
+    .audit-regla {
+      font-size: .67rem;
+      color: #555;
+      line-height: 1.5;
+      padding-left: 7px;
+      border-left: 2px solid var(--rojo);
+      margin-bottom: 3px;
+    }
+    .audit-no-regla {
+      font-size: .67rem;
+      color: var(--gris-400);
+      font-style: italic;
+      padding-left: 7px;
+    }
+    @media (max-width: 700px) {
+      .audit-layout { flex-direction: column; padding: 0; }
+      .audit-panel { width: 100%; padding: 0 16px 16px; }
+      .audit-layout > .container { padding-left: 0; padding-right: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-logo" onclick="window.location.href='/cuenta'">Nutri<span>Perú</span></div>
+    <div style="display:flex;align-items:center;gap:14px">
+      <div class="topbar-user" id="topUser"></div>
+      <button onclick="irIngredientes()" title="Mis ingredientes"
+              style="background:rgba(255,255,255,.2);border:none;color:#fff;
+                     border-radius:8px;padding:6px 10px;cursor:pointer;font-size:.8rem">
+        🥗 Ingredientes
+      </button>
+      <button onclick="irPerfil()" title="Editar perfil"
+              style="background:rgba(255,255,255,.2);border:none;color:#fff;
+                     border-radius:8px;padding:6px 10px;cursor:pointer;font-size:.8rem">
+        ✏️ Perfil
+      </button>
+    </div>
+  </div>
+
+<div class="audit-layout">
+  <div class="container">
+    <!-- Anillo calórico -->
+    <div id="ringSection" class="card" style="padding:0">
+      <div class="kcal-ring-wrap">
+        <div class="ring-wrap">
+          <svg class="ring-svg" width="140" height="140" viewBox="0 0 140 140">
+            <circle class="ring-bg" cx="70" cy="70" r="60"/>
+            <circle class="ring-fg" id="ringFg" cx="70" cy="70" r="60"
+                    stroke-dasharray="377" stroke-dashoffset="377"/>
+          </svg>
+          <div class="ring-center">
+            <div class="ring-kcal" id="kcalReal">—</div>
+            <div class="ring-label">de <span id="kcalTarget">—</span> kcal</div>
+          </div>
+        </div>
+        <div class="ring-date" id="fechaLabel"></div>
+      </div>
+      <!-- Macros -->
+      <div class="macros-row" style="padding:0 20px 20px">
+        <div class="macro-item">
+          <div class="macro-name">Proteína</div>
+          <div class="macro-val"><span id="mProtReal">—</span>g</div>
+          <div class="macro-bar-bg"><div class="macro-bar-fg p" id="mProtBar" style="width:0%"></div></div>
+        </div>
+        <div class="macro-item">
+          <div class="macro-name">Carbos</div>
+          <div class="macro-val"><span id="mCarbReal">—</span>g</div>
+          <div class="macro-bar-bg"><div class="macro-bar-fg c" id="mCarbBar" style="width:0%"></div></div>
+        </div>
+        <div class="macro-item">
+          <div class="macro-name">Grasa</div>
+          <div class="macro-val"><span id="mGrasReal">—</span>g</div>
+          <div class="macro-bar-bg"><div class="macro-bar-fg g" id="mGrasBar" style="width:0%"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Cards de comidas -->
+    <div id="mealsContainer">
+      <!-- Skeleton mientras carga -->
+      <div class="card" style="height:80px"><div class="skeleton" style="height:100%;border-radius:12px"></div></div>
+      <div class="card" style="height:80px"><div class="skeleton" style="height:100%;border-radius:12px"></div></div>
+      <div class="card" style="height:80px"><div class="skeleton" style="height:100%;border-radius:12px"></div></div>
+      <div class="card" style="height:80px"><div class="skeleton" style="height:100%;border-radius:12px"></div></div>
+    </div>
+
+    <p id="errorMsg" class="error-box" style="display:none">
+      <span class="icon">⚠️</span>
+      <span id="errorText"></span>
+    </p>
+  </div><!-- /.container -->
+
+  <aside class="audit-panel" id="auditPanel" style="display:none">
+    <div class="audit-panel-title">Auditoría del sistema</div>
+    <div class="card" style="padding:14px;margin-bottom:12px">
+      <div class="audit-section-title">Cálculo calórico</div>
+      <div id="auditKcal"></div>
+    </div>
+    <div class="card" style="padding:14px;margin-bottom:12px">
+      <div class="audit-section-title">Distribución de macros</div>
+      <div id="auditMacros"></div>
+    </div>
+    <div class="card" style="padding:14px">
+      <div class="audit-section-title">Reglas del sistema experto</div>
+      <div id="auditReglas"></div>
+    </div>
+  </aside>
+</div><!-- /.audit-layout -->
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const ICONOS  = {desayuno:'☀️', almuerzo:'🍽️', cena:'🌙', snack:'🥝'};
+    const LABELS  = {desayuno:'Desayuno', almuerzo:'Almuerzo', cena:'Cena', snack:'Snack'};
+    const username = localStorage.getItem('np_username');
+
+    // ── Unidades amigables ────────────────────────────────────
+    const UNIDADES = {
+      'Pollo':           {u:'presa',     ref:200},
+      'Pavo':            {u:'filete',    ref:150},
+      'Carne molida':    {u:'porción',   ref:100},
+      'Bistec':          {u:'filete',    ref:150},
+      'Lomo de res':     {u:'filete',    ref:150},
+      'Cerdo':           {u:'chuleta',   ref:120},
+      'Pescado blanco':  {u:'filete',    ref:150},
+      'Jurel':           {u:'filete',    ref:150},
+      'Caballa':         {u:'filete',    ref:150},
+      'Salmon':          {u:'filete',    ref:150},
+      'Atun':            {u:'lata',      ref:150},
+      'Huevo':           {u:'unidad',    ref:55},
+      'Proteina en polvo':{u:'cucharada',ref:30},
+      'Arroz':           {u:'taza',      ref:80},
+      'Papa':            {u:'unidad',    ref:120},
+      'Camote':          {u:'unidad',    ref:150},
+      'Yuca':            {u:'trozo',     ref:100},
+      'Pasta':           {u:'taza',      ref:80},
+      'Avena':           {u:'taza',      ref:80},
+      'Pan':             {u:'rebanada',  ref:35},
+      'Choclo':          {u:'mazorca',   ref:150},
+      'Platano':         {u:'unidad',    ref:100},
+      'Manzana':         {u:'unidad',    ref:130},
+      'Naranja':         {u:'unidad',    ref:130},
+      'Mandarina':       {u:'unidad',    ref:80},
+      'Pina':            {u:'tajada',    ref:80},
+      'Papaya':          {u:'trozo',     ref:100},
+      'Pera':            {u:'unidad',    ref:120},
+      'Durazno':         {u:'unidad',    ref:100},
+      'Mango':           {u:'unidad',    ref:150},
+      'Sandia':          {u:'tajada',    ref:200},
+      'Kiwi':            {u:'unidad',    ref:70},
+      'Uvas':            {u:'racimo',    ref:100},
+      'Fresas':          {u:'taza',      ref:100},
+      'Arandanos':       {u:'taza',      ref:100},
+      'Tomate':          {u:'unidad',    ref:120},
+      'Zanahoria':       {u:'unidad',    ref:80},
+      'Pepino':          {u:'unidad',    ref:150},
+      'Espinaca':        {u:'taza',      ref:60},
+      'Brocoli':         {u:'taza',      ref:90},
+      'Leche':           {u:'vaso',      ref:200},
+      'Yogurt':          {u:'vaso',      ref:200},
+      'Queso blanco':    {u:'porción',   ref:30},
+      'Queso amarillo':  {u:'rebanada',  ref:20},
+      'Palta':           {u:'unidad',    ref:150},
+      'Mani':            {u:'puñado',    ref:30},
+      'Almendras':       {u:'puñado',    ref:28},
+      'Nueces':          {u:'puñado',    ref:28},
+      'Aceitunas':       {u:'porción',   ref:30},
+    };
+
+    function unidadAmigable(nombre, gramos) {
+      const info = UNIDADES[nombre];
+      if (!info) return '';
+      const cant = gramos / info.ref;
+      if (cant < 0.3) return '';
+      let label;
+      if      (Math.abs(cant - Math.round(cant)) < 0.15) label = `≈ ${Math.round(cant)} ${info.u}`;
+      else if (Math.abs(cant - 0.5) < 0.15)              label = `≈ ½ ${info.u}`;
+      else if (Math.abs(cant - 1.5) < 0.15)              label = `≈ 1½ ${info.u}`;
+      else                                                label = `≈ ${cant.toFixed(1)} ${info.u}`;
+      return `<span class="ing-unidad">${label}</span>`;
+    }
+
+    if (!username) window.location.href = '/';
+    document.getElementById('topUser').textContent = '👤 ' + username;
+
+    // Fecha en español
+    const hoy = new Date();
+    const dias = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+    const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    document.getElementById('fechaLabel').textContent =
+      `${dias[hoy.getDay()]} ${hoy.getDate()} ${meses[hoy.getMonth()]}`;
+
+    function irPerfil() { window.location.href = '/perfil'; }
+    function irIngredientes() { window.location.href = '/ingredientes'; }
+
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 2500);
+    }
+
+    function animateRing(real, target) {
+      const circ = 2 * Math.PI * 60;
+      const pct  = Math.min(real / target, 1);
+      document.getElementById('ringFg').style.strokeDashoffset = circ * (1 - pct);
+    }
+
+    function renderMacroBar(idBar, real, target) {
+      document.getElementById(idBar).style.width = Math.min(real/target*100,100) + '%';
+    }
+
+    function buildMealCard(comida_res, nombres_platillos) {
+      const tipo     = comida_res.comida;
+      const platillo = nombres_platillos?.[tipo] || {};
+      const ings     = comida_res.plan || [];
+      const tot      = comida_res.totales;
+
+      const ingRows = ings.map(i => `
+        <div class="ing-row">
+          <div class="ing-left">
+            <div class="ing-dot"></div>
+            <div>
+              <div class="ing-nombre">${i.nombre}</div>
+              <div class="ing-cat">${i.categoria}</div>
+            </div>
+          </div>
+          <div class="ing-right">
+            <div class="ing-gramos">${i.gramos}g</div>
+            ${unidadAmigable(i.nombre, i.gramos)}
+            <div class="ing-kcal">${i.kcal} kcal</div>
+          </div>
+        </div>`).join('');
+
+      const devKcal = comida_res.desviaciones?.kcal ?? 0;
+      const devColor = Math.abs(devKcal) < 3 ? '#2ecc71' : Math.abs(devKcal) < 5 ? '#f39c12' : '#e74c3c';
+
+      return `
+        <div class="meal-card" id="card-${tipo}">
+          <div class="meal-header" onclick="toggleCard('${tipo}')">
+            <div class="meal-left">
+              <div class="meal-icon ${tipo}">${ICONOS[tipo]}</div>
+              <div>
+                <div class="meal-name">${LABELS[tipo]}</div>
+                <div class="meal-plato">${platillo.nombre || '—'}</div>
+                ${platillo.descripcion ? `<div class="meal-desc">${platillo.descripcion}</div>` : ''}
+              </div>
+            </div>
+            <div style="display:flex;align-items:center">
+              <div>
+                <div class="meal-kcal">${tot.kcal} kcal</div>
+                <div style="font-size:.68rem;color:${devColor};text-align:right">${devKcal>0?'+':''}${devKcal}%</div>
+              </div>
+              <div class="meal-chevron">▼</div>
+            </div>
+          </div>
+          <div class="meal-body">
+            <div class="ing-list">${ingRows}</div>
+            <div class="meal-macros">
+              <div class="m-macro p"><div class="val">${tot.proteina}g</div><div class="lbl">Proteína</div></div>
+              <div class="m-macro c"><div class="val">${tot.carbos}g</div><div class="lbl">Carbos</div></div>
+              <div class="m-macro g"><div class="val">${tot.grasa}g</div><div class="lbl">Grasa</div></div>
+              <div class="m-macro"><div class="val" style="color:var(--gris-700)">${ings.length}</div><div class="lbl">Ingredientes</div></div>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    function toggleCard(tipo) {
+      document.getElementById('card-' + tipo).classList.toggle('open');
+    }
+
+    async function cargarPlan() {
+      try {
+        const [res, perfilRes] = await Promise.all([
+          fetch(`/api/usuario/${username}/plan`),
+          fetch(`/api/usuario/${username}/perfil`),
+        ]);
+        if (res.status === 400) {
+          window.location.href = '/perfil';
+          return;
+        }
+        if (!res.ok) throw new Error((await res.json()).detail || 'Error al cargar plan');
+
+        const plan   = await res.json();
+        const perfil = perfilRes.ok ? await perfilRes.json() : null;
+        const td   = plan.totales_dia;
+        const tt   = plan.targets_dia;
+        const np   = plan.nombres_platillos || {};
+
+        // Actualizar anillo calórico
+        document.getElementById('kcalReal').textContent   = td.kcal;
+        document.getElementById('kcalTarget').textContent = tt.calorias_objetivo;
+        animateRing(td.kcal, tt.calorias_objetivo);
+
+        // Macros
+        document.getElementById('mProtReal').textContent = td.proteina;
+        document.getElementById('mCarbReal').textContent = td.carbos;
+        document.getElementById('mGrasReal').textContent = td.grasa;
+        renderMacroBar('mProtBar', td.proteina, tt.proteina_g);
+        renderMacroBar('mCarbBar', td.carbos,   tt.carbos_g);
+        renderMacroBar('mGrasBar', td.grasa,    tt.grasa_g);
+
+        // Meal cards
+        const container = document.getElementById('mealsContainer');
+        container.innerHTML = plan.comidas.map(c => buildMealCard(c, np)).join('');
+
+        // Abrir almuerzo por defecto
+        const alm = document.getElementById('card-almuerzo');
+        if (alm) alm.classList.add('open');
+
+        if (perfil) renderAudit(plan, perfil);
+
+      } catch(e) {
+        document.getElementById('mealsContainer').innerHTML = '';
+        const errEl = document.getElementById('errorMsg');
+        document.getElementById('errorText').textContent = e.message;
+        errEl.style.display = 'block';
+      }
+    }
+
+    // ── Auditoría del sistema ─────────────────────────────────
+    const OBJETIVOS_CFG = {
+      perder_grasa:  {ajuste:0.80, pPct:40, cPct:35, gPct:25, label:'Perder grasa (−20%)'},
+      mantener:      {ajuste:1.00, pPct:30, cPct:45, gPct:25, label:'Mantener peso (×1.00)'},
+      ganar_musculo: {ajuste:1.15, pPct:35, cPct:40, gPct:25, label:'Ganar músculo (+15%)'},
+    };
+    const FACTOR_NOMBRES = {
+      '1.2':'sedentario','1.375':'ligero','1.55':'moderado','1.725':'intenso','1.9':'muy intenso'
+    };
+    const COMIDA_AUDIT = {desayuno:'☀️ Desayuno', almuerzo:'🍽️ Almuerzo', cena:'🌙 Cena', snack:'🥝 Snack'};
+
+    function renderAudit(plan, perfil) {
+      const td  = plan.targets_dia;
+      const obj = td.objetivo;
+      const cfg = OBJETIVOS_CFG[obj] || OBJETIVOS_CFG.mantener;
+      const minimo    = perfil.sexo === 'M' ? 1500 : 1200;
+      const kcalBruta = Math.round(td.get * cfg.ajuste);
+      const pisoPiado = kcalBruta < minimo;
+
+      // Detectar factor de actividad
+      const factorRaw = td.get / td.tmb;
+      let factorVal = '', factorNombre = '';
+      for (const [k, v] of Object.entries(FACTOR_NOMBRES)) {
+        if (Math.abs(factorRaw - parseFloat(k)) < 0.02) { factorVal = k; factorNombre = v; break; }
+      }
+
+      // Fórmula TMB según sexo
+      const signo      = perfil.sexo === 'M' ? '+5' : '−161';
+      const formulaTMB = `10×${perfil.peso_kg} + 6.25×${perfil.altura_cm} − 5×${perfil.edad} ${signo}`;
+
+      // ① Sección cálculo calórico
+      document.getElementById('auditKcal').innerHTML = `
+        <div class="audit-step">
+          <span class="audit-num">①</span>
+          <div>
+            <div class="audit-step-label">TMB — Mifflin-St Jeor</div>
+            <div class="audit-formula">${formulaTMB}</div>
+            <div class="audit-result">= ${td.tmb} kcal</div>
+          </div>
+        </div>
+        <div class="audit-step">
+          <span class="audit-num">②</span>
+          <div>
+            <div class="audit-step-label">GET — Gasto Energético Total</div>
+            <div class="audit-formula">${td.tmb} × ${factorVal} <span class="audit-tag">${factorNombre}</span></div>
+            <div class="audit-result">= ${td.get} kcal</div>
+          </div>
+        </div>
+        <div class="audit-step">
+          <span class="audit-num">③</span>
+          <div>
+            <div class="audit-step-label">Ajuste por objetivo</div>
+            <div class="audit-formula">${td.get} × ${cfg.ajuste} <span class="audit-tag">${cfg.label}</span></div>
+            <div class="audit-result">= ${kcalBruta} kcal${pisoPiado ? ' ↓' : ''}</div>
+          </div>
+        </div>
+        ${pisoPiado ? `<div class="audit-warn-box">
+          ⚠️ Piso de seguridad aplicado<br>
+          max(${kcalBruta}, ${minimo}) = <strong>${td.calorias_objetivo} kcal</strong><br>
+          <span style="font-size:.63rem">Mínimo para ${perfil.sexo === 'M' ? 'hombres' : 'mujeres'}</span>
+        </div>` : ''}`;
+
+      // ② Sección macros
+      const kcal = td.calorias_objetivo;
+      document.getElementById('auditMacros').innerHTML = `
+        <div class="audit-macro-row">
+          <span class="audit-macro-dot p"></span>
+          <span class="audit-macro-label">Proteína <strong>${cfg.pPct}%</strong></span>
+          <span class="audit-macro-formula">${kcal}×${(cfg.pPct/100).toFixed(2)}÷4</span>
+          <span class="audit-macro-g">${td.proteina_g}g</span>
+        </div>
+        <div class="audit-macro-row">
+          <span class="audit-macro-dot c"></span>
+          <span class="audit-macro-label">Carbos <strong>${cfg.cPct}%</strong></span>
+          <span class="audit-macro-formula">${kcal}×${(cfg.cPct/100).toFixed(2)}÷4</span>
+          <span class="audit-macro-g">${td.carbos_g}g</span>
+        </div>
+        <div class="audit-macro-row">
+          <span class="audit-macro-dot g"></span>
+          <span class="audit-macro-label">Grasa <strong>${cfg.gPct}%</strong></span>
+          <span class="audit-macro-formula">${kcal}×${(cfg.gPct/100).toFixed(2)}÷9</span>
+          <span class="audit-macro-g">${td.grasa_g}g</span>
+        </div>
+        <p class="audit-note">Proteína y carbos: 4 kcal/g · Grasa: 9 kcal/g</p>`;
+
+      // ③ Sección reglas del SE
+      const reglasPor = plan.reglas_por_comida || {};
+      document.getElementById('auditReglas').innerHTML =
+        ['desayuno','almuerzo','cena','snack'].map(tipo => `
+          <div class="audit-comida">
+            <div class="audit-comida-title">${COMIDA_AUDIT[tipo]}</div>
+            ${(reglasPor[tipo] || []).length
+              ? (reglasPor[tipo]).map(r => `<div class="audit-regla">${r}</div>`).join('')
+              : '<div class="audit-no-regla">Sin reglas adicionales</div>'}
+          </div>`).join('');
+
+      document.getElementById('auditPanel').style.display = 'block';
+    }
+
+    cargarPlan();
+  </script>
+</body>
+</html>

@@ -1,0 +1,307 @@
+<!--
+  ingredientes.html — Selección de ingredientes disponibles
+  Ruta: /ingredientes
+  Función: permite al usuario marcar qué ingredientes tiene disponibles.
+           Los ingredientes seleccionados filtran el dataset antes de ejecutar
+           el Sistema Experto + Optimizador (Celdas 7 y 9).
+  API: GET /api/ingredientes
+       GET/POST /api/usuario/{username}/ingredientes
+-->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>NutriPerú — Mis ingredientes</title>
+  <link rel="stylesheet" href="/static/style.css"/>
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-logo" onclick="window.location.href='/cuenta'">Nutri<span>Perú</span></div>
+    <div style="display:flex;align-items:center;gap:14px">
+      <div class="topbar-user" id="topUser"></div>
+      <button onclick="volverSinGuardar()" title="Volver sin guardar"
+              style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);color:#fff;
+                     border-radius:8px;padding:6px 10px;cursor:pointer;font-size:.8rem">
+        ← Volver
+      </button>
+    </div>
+  </div>
+
+  <div class="perfil-header" style="padding-bottom:8px">
+    <h1>¿Qué ingredientes tienes?</h1>
+    <p>Marca solo los que puedes conseguir fácilmente</p>
+  </div>
+
+  <div class="container" style="padding-bottom:90px">
+    <input id="searchBox" class="ing-search" type="text"
+           placeholder="Buscar ingrediente…" autocomplete="off"/>
+    <p id="validMsg" style="display:none;color:var(--rojo);font-size:.82rem;
+                             text-align:center;padding:8px 0;font-weight:600"></p>
+    <div id="catContainer"></div>
+    <p id="emptyMsg" style="display:none;text-align:center;color:var(--gris-400);
+                             font-size:.9rem;padding:24px 0">
+      Sin resultados para esa búsqueda.
+    </p>
+  </div>
+
+  <div class="save-bar">
+    <div class="save-count"><span id="countSel">0</span> seleccionados</div>
+    <button class="btn-save" onclick="guardar()">Guardar y ver mi plan →</button>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const username = localStorage.getItem('np_username');
+    if (!username) window.location.href = '/';
+    document.getElementById('topUser').textContent = '👤 ' + username;
+
+    const CAT_ICONS = {
+      Proteina: '🥩', Carbohidrato: '🌾', Verdura: '🥦',
+      Fruta: '🍎', Grasa: '🫒', Lacteo: '🥛',
+      Condimento: '🧂', Bebida: '🥤',
+    };
+
+    const ING_ICONS = {
+      // Proteínas
+      'Pollo':'🍗','Pavo':'🦃','Carne molida':'🥩','Bistec':'🥩',
+      'Lomo de res':'🥩','Cerdo':'🐷','Pescado blanco':'🐟','Jurel':'🐟',
+      'Caballa':'🐟','Salmon':'🍣','Atun':'🐟','Huevo':'🥚',
+      'Proteina en polvo':'💪','Tarwi':'🫘',
+      // Carbohidratos
+      'Arroz':'🍚','Papa':'🥔','Camote':'🍠','Yuca':'🌿','Pasta':'🍝',
+      'Avena':'🌾','Pan':'🍞','Choclo':'🌽','Quinua':'🌾','Kiwicha':'🌾',
+      'Mashua':'🌿','Oca':'🍠','Chuño':'🥔',
+      // Verduras
+      'Tomate':'🍅','Zanahoria':'🥕','Pepino':'🥒','Espinaca':'🥬',
+      'Brocoli':'🥦','Lechuga':'🥗','Cebolla':'🧅','Ajo':'🧄',
+      'Apio':'🌿','Zapallo':'🎃','Pimiento rojo':'🫑','Pimiento verde':'🫑',
+      'Vainita':'🫘','Acelga':'🥬','Camu camu':'🍒',
+      // Frutas
+      'Platano':'🍌','Manzana':'🍎','Naranja':'🍊','Mandarina':'🍊',
+      'Pina':'🍍','Papaya':'🍈','Pera':'🍐','Durazno':'🍑','Mango':'🥭',
+      'Sandia':'🍉','Kiwi':'🥝','Uvas':'🍇','Fresas':'🍓','Arandanos':'🫐',
+      'Maracuya':'🍋','Lucuma':'🟡','Chirimoya':'🍏',
+      // Grasas
+      'Palta':'🥑','Mani':'🥜','Almendras':'🌰','Nueces':'🌰',
+      'Aceitunas':'🫒','Aceite de oliva':'🫙','Semillas de chia':'🌱',
+      'Semillas de lino':'🌱','Mantequilla de mani':'🥜',
+      // Lácteos
+      'Leche':'🥛','Yogurt':'🍶','Queso blanco':'🧀','Queso amarillo':'🧀',
+      // Condimentos
+      'Sal':'🧂','Pimienta':'⚫','Comino':'🌿','Oregano':'🌿',
+      'Paprika':'🌶️','Curcuma':'🌿','Canela':'🟤','Azucar':'🍬',
+      'Miel':'🍯','Stevia':'🌿','Vinagre':'🫙',
+      // Bebidas
+      'Agua':'💧','Te verde':'🍵','Cafe':'☕','Chicha morada':'🫙','Leche vegetal':'🥛',
+    };
+
+    const CAT_MINIMOS = { Proteina: 2, Carbohidrato: 2, Verdura: 1, Fruta: 1 };
+
+    let seleccionados = new Set();
+    let todosIngredientes = [];
+    let gruposGlobal = {};
+
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 2500);
+    }
+
+    function volverSinGuardar() {
+      window.location.href = '/plan';
+    }
+
+    function actualizarContador() {
+      document.getElementById('countSel').textContent = seleccionados.size;
+    }
+
+    function toggleChip(nombre, chipEl) {
+      if (seleccionados.has(nombre)) {
+        seleccionados.delete(nombre);
+        chipEl.classList.remove('selected');
+        chipEl.querySelector('.chip-check').textContent = '';
+      } else {
+        seleccionados.add(nombre);
+        chipEl.classList.add('selected');
+        chipEl.querySelector('.chip-check').textContent = '✓';
+      }
+      actualizarContador();
+      actualizarBadge(chipEl.closest('.cat-section'));
+    }
+
+    function actualizarBadge(seccion) {
+      if (!seccion) return;
+      const chips   = seccion.querySelectorAll('.chip');
+      const total   = chips.length;
+      const selec   = [...chips].filter(c => c.classList.contains('selected')).length;
+      const badge   = seccion.querySelector('.cat-badge');
+      if (badge) badge.textContent = `${selec}/${total}`;
+    }
+
+    function toggleCategoria(seccion, forzar = null) {
+      const chips = [...seccion.querySelectorAll('.chip')];
+      const visibles = chips.filter(c => !c.classList.contains('hidden'));
+      const todosSelec = visibles.every(c => c.classList.contains('selected'));
+      const activar = forzar !== null ? forzar : !todosSelec;
+
+      visibles.forEach(c => {
+        const nombre = c.dataset.nombre;
+        if (activar) {
+          seleccionados.add(nombre);
+          c.classList.add('selected');
+          c.querySelector('.chip-check').textContent = '✓';
+        } else {
+          seleccionados.delete(nombre);
+          c.classList.remove('selected');
+          c.querySelector('.chip-check').textContent = '';
+        }
+      });
+      actualizarContador();
+      actualizarBadge(seccion);
+    }
+
+    function toggleColapso(seccion) {
+      const grid  = seccion.querySelector('.chip-grid');
+      const arrow = seccion.querySelector('.cat-arrow');
+      grid.classList.toggle('collapsed');
+      if (arrow) arrow.textContent = grid.classList.contains('collapsed') ? '▶' : '▼';
+    }
+
+    function renderCategorias(grupos, seleccion) {
+      gruposGlobal = grupos;
+      const container = document.getElementById('catContainer');
+      container.innerHTML = '';
+      todosIngredientes = [];
+
+      const orden = ['Proteina','Carbohidrato','Verdura','Fruta','Grasa','Lacteo','Condimento','Bebida'];
+      const cats  = orden.filter(c => grupos[c]).concat(
+                    Object.keys(grupos).filter(c => !orden.includes(c)));
+
+      cats.forEach(cat => {
+        const items = grupos[cat];
+        const seccion = document.createElement('div');
+        seccion.className = 'cat-section';
+
+        const total  = items.length;
+        const selec  = items.filter(i => seleccion.has(i.nombre)).length;
+        const icono  = CAT_ICONS[cat] || '🍽️';
+
+        const chipsHtml = items.map(i => {
+          const emoji = ING_ICONS[i.nombre] ? `${ING_ICONS[i.nombre]} ` : '';
+          return `
+            <div class="chip ${seleccion.has(i.nombre) ? 'selected' : ''}"
+                 data-nombre="${i.nombre}"
+                 onclick="toggleChip('${i.nombre}', this)">
+              <span class="chip-check">${seleccion.has(i.nombre) ? '✓' : ''}</span>
+              ${emoji}${i.nombre}
+            </div>`;
+        }).join('');
+
+        seccion.innerHTML = `
+          <div class="cat-header" style="cursor:pointer"
+               onclick="toggleColapso(this.closest('.cat-section'))">
+            <div class="cat-nombre">
+              ${icono} ${cat}
+              <span class="cat-badge">${selec}/${total}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <button class="cat-toggle-all"
+                      onclick="event.stopPropagation();toggleCategoria(this.closest('.cat-section'))">
+                ${selec === total ? 'Quitar todos' : 'Todos'}
+              </button>
+              <span class="cat-arrow" style="color:var(--gris-400);font-size:.8rem">▼</span>
+            </div>
+          </div>
+          <div class="chip-grid">${chipsHtml}</div>`;
+
+        container.appendChild(seccion);
+        todosIngredientes.push(...items.map(i => ({...i, el: seccion.querySelector(`[data-nombre="${i.nombre}"]`)})));
+      });
+    }
+
+    document.getElementById('searchBox').addEventListener('input', function() {
+      const q = this.value.toLowerCase().trim();
+      let alguno = false;
+
+      document.querySelectorAll('.cat-section').forEach(sec => {
+        const chips = sec.querySelectorAll('.chip');
+        let secTiene = false;
+        chips.forEach(chip => {
+          const match = chip.dataset.nombre.toLowerCase().includes(q);
+          chip.classList.toggle('hidden', !match);
+          if (match) secTiene = true;
+        });
+        sec.style.display = secTiene ? '' : 'none';
+        if (secTiene) {
+          // Auto-expandir al buscar
+          const grid  = sec.querySelector('.chip-grid');
+          const arrow = sec.querySelector('.cat-arrow');
+          if (q && grid.classList.contains('collapsed')) {
+            grid.classList.remove('collapsed');
+            if (arrow) arrow.textContent = '▼';
+          }
+          alguno = true;
+        }
+        actualizarBadge(sec);
+      });
+
+      document.getElementById('emptyMsg').style.display = alguno ? 'none' : 'block';
+    });
+
+    async function guardar() {
+      const validEl = document.getElementById('validMsg');
+      validEl.style.display = 'none';
+
+      // Validar mínimos por categoría
+      const errores = [];
+      for (const [cat, minimo] of Object.entries(CAT_MINIMOS)) {
+        const items = gruposGlobal[cat] || [];
+        const selec = items.filter(i => seleccionados.has(i.nombre)).length;
+        if (selec < minimo) {
+          errores.push(`${CAT_ICONS[cat] || ''} ${cat}: mínimo ${minimo} (tienes ${selec})`);
+        }
+      }
+      if (errores.length > 0) {
+        validEl.textContent = 'Selecciona más: ' + errores.join(' · ');
+        validEl.style.display = 'block';
+        return;
+      }
+
+      const btn = document.querySelector('.btn-save');
+      btn.disabled = true;
+      btn.textContent = 'Guardando…';
+      try {
+        const res = await fetch(`/api/usuario/${username}/ingredientes`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ingredientes: [...seleccionados]})
+        });
+        if (!res.ok) throw new Error((await res.json()).detail || 'Error');
+        window.location.href = '/plan';
+      } catch(e) {
+        showToast('Error: ' + e.message);
+        btn.disabled = false;
+        btn.textContent = 'Guardar y ver mi plan →';
+      }
+    }
+
+    async function init() {
+      const [gruposRes, selecRes] = await Promise.all([
+        fetch('/api/ingredientes'),
+        fetch(`/api/usuario/${username}/ingredientes`)
+      ]);
+      const grupos    = await gruposRes.json();
+      const selecData = await selecRes.json();
+
+      seleccionados = new Set(selecData.ingredientes);
+      renderCategorias(grupos, seleccionados);
+      actualizarContador();
+    }
+
+    init();
+  </script>
+</body>
+</html>
