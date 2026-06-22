@@ -672,3 +672,24 @@ body {
   .hero-logo  { font-size: 3.5rem; }
   .meal-card  { border-radius: 20px; }
 }
+
+/* ── Safety net: evita overflow horizontal en cualquier pantalla ─ */
+html, body { overflow-x: hidden; max-width: 100%; }
+img, video, canvas, svg, iframe { max-width: 100%; height: auto; }
+
+/* ── Tablas con scroll horizontal contenido (no afecta a la página) ─ */
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── Mobile small (<400px) ──────────────────────────────── */
+@media (max-width: 400px) {
+  .container { padding: 16px 12px 100px; }
+  .topbar { padding: 0 12px; height: 56px; gap: 6px; }
+  .topbar-logo { font-size: 1.05rem; }
+  .topbar-user { display: none; }
+  .save-bar { padding: 10px 14px; gap: 8px; }
+  .save-count { font-size: .78rem; }
+  .btn-save { padding: 11px; font-size: .88rem; }
+}

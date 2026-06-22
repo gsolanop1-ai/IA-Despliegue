@@ -234,12 +234,47 @@
       font-size: .68rem;
     }
 
+    /* ── Tablas con scroll horizontal contenido ── */
+    .a-card.has-table {
+      padding: 0;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .a-card.has-table .a-table { min-width: 480px; }
+
+    /* Tablas dentro de .a-card normal (catalogo de reglas): scroll-x en mobile */
+    @media (max-width: 700px) {
+      .a-card:not(.has-table) > .a-table {
+        display: block;
+        max-width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      .a-card:not(.has-table) > .a-table > thead,
+      .a-card:not(.has-table) > .a-table > tbody {
+        display: table;
+        width: 100%;
+        min-width: 520px;
+      }
+    }
+
     @media (max-width: 640px) {
       .arch-grid    { grid-template-columns: repeat(2, 1fr); }
       .dec-card     { grid-template-columns: 1fr; }
     }
     @media (max-width: 480px) {
-      .arch-grid    { grid-template-columns: repeat(2, 1fr); }
+      .arch-grid       { grid-template-columns: repeat(2, 1fr); }
+      .admin-content   { padding: 18px 12px 50px; }
+      .admin-hero      { padding: 22px 14px 18px; }
+      .admin-hero h1   { font-size: 1.15rem; }
+      .admin-hero p    { font-size: .76rem; }
+      .a-card          { padding: 16px; }
+      .a-section-title { font-size: .66rem; }
+      .tab-btn         { padding: 11px 12px; font-size: .76rem; }
+      .a-table th,
+      .a-table td     { padding: 7px 9px; font-size: .76rem; }
+      .stat-num        { font-size: 1.5rem; }
+      .notebook-list   { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -330,7 +365,7 @@
 
       <div class="a-section">
         <div class="a-section-title">💻 Tecnologías utilizadas</div>
-        <div class="a-card" style="padding:0;overflow:hidden">
+        <div class="a-card has-table">
           <table class="a-table">
             <thead>
               <tr><th>Capa</th><th>Tecnología</th><th>Rol en el sistema</th></tr>
@@ -357,7 +392,7 @@
           <div class="stat-box"><span class="stat-num">18</span><span class="stat-label">Columnas</span></div>
           <div class="stat-box"><span class="stat-num">100g</span><span class="stat-label">Base de medición</span></div>
         </div>
-        <div class="a-card" style="padding:0;overflow:hidden">
+        <div class="a-card has-table">
           <table class="a-table">
             <thead><tr><th>Categoría</th><th>Ingredientes</th><th>Tipo de uso</th></tr></thead>
             <tbody>
@@ -402,7 +437,7 @@
 
       <div class="a-section">
         <div class="a-section-title">🎓 Atributos del graduado cubiertos</div>
-        <div class="a-card" style="padding:0;overflow:hidden">
+        <div class="a-card has-table">
           <table class="a-table">
             <thead><tr><th>Código</th><th>Atributo</th><th>Evidencia en el proyecto</th></tr></thead>
             <tbody>
@@ -436,7 +471,7 @@
 
       <div class="a-section">
         <div class="a-section-title">🤖 Técnicas de IA elegidas</div>
-        <div class="a-card" style="padding:0;overflow:hidden">
+        <div class="a-card has-table">
           <table class="a-table">
             <thead><tr><th>Capa</th><th>Técnica</th><th>Uso en el sistema</th></tr></thead>
             <tbody>
@@ -528,7 +563,7 @@
             con valores verificados específicamente para el contexto local.
           </p>
         </div>
-        <div class="a-card" style="padding:0;overflow:hidden;margin-top:0">
+        <div class="a-card has-table" style="margin-top:0">
           <table class="a-table">
             <thead><tr><th>Decisión</th><th>Justificación</th></tr></thead>
             <tbody>
@@ -559,7 +594,7 @@
 
       <div class="a-section">
         <div class="a-section-title">⚠️ Riesgos identificados y mitigaciones</div>
-        <div class="a-card" style="padding:0;overflow:hidden">
+        <div class="a-card has-table">
           <table class="a-table">
             <thead><tr><th>Riesgo</th><th>Impacto</th><th>Mitigación implementada</th></tr></thead>
             <tbody>
@@ -618,7 +653,7 @@
 
       <div class="a-section">
         <div class="a-section-title">📊 Resumen de grupos</div>
-        <div class="a-card" style="padding:0;overflow:hidden">
+        <div class="a-card has-table">
           <table class="a-table">
             <thead>
               <tr><th>Grupo</th><th>Tipo</th><th>Cant.</th><th>Ubicación en el código</th><th>Descripción</th></tr>
@@ -1194,7 +1229,7 @@
 
       // ⑪ Tabla resumen VV&E
       document.getElementById('vveTable').innerHTML = `
-        <div class="a-card" style="padding:0;overflow:hidden">
+        <div class="a-card has-table">
           <table class="a-table">
             <thead><tr>
               <th>Perfil</th><th>Target (kcal)</th><th>Real (kcal)</th>
