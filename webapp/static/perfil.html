@@ -15,7 +15,7 @@
 </head>
 <body>
   <div class="topbar">
-    <div class="topbar-logo" onclick="window.location.href='/cuenta'">Nutri<span>Perú</span></div>
+    <div class="topbar-logo" onclick="window.location.href='/plan'">Nutri<span>Perú</span></div>
     <div class="topbar-user" id="topUser"></div>
   </div>
 
@@ -240,7 +240,7 @@
       if (editando && datosGuardados) {
         if (!confirm('¿Salir sin guardar cambios?')) return;
       }
-      window.location.href = datosGuardados ? '/plan' : '/cuenta';
+      window.location.href = datosGuardados ? '/plan' : '/';
     }
 
     function cerrarSesion() {
