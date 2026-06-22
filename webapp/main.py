@@ -17,6 +17,8 @@ Endpoints del panel académico — corresponden a celdas del notebook:
 """
 
 import json
+import threading
+from contextlib import asynccontextmanager
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -33,11 +35,35 @@ from .ai_engine import PerfilUsuario, generar_plan_completo
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="NutriPerú", version="1.0")
-
 # Caché en memoria para resultados estáticos (dataset no cambia en runtime)
+_cache_stats = None
 _cache_kmeans = None
 _cache_vve = None
+
+
+def _precomputar_admin():
+    """Calcula stats, K-Means y VV&E en background para que el panel admin
+    no espere en la primera carga. Idempotente: si el caché ya existe, no recalcula."""
+    global _cache_stats, _cache_kmeans, _cache_vve
+    try:
+        if _cache_stats is None:
+            _cache_stats = _calcular_stats()
+        if _cache_kmeans is None:
+            _cache_kmeans = _calcular_kmeans()
+        if _cache_vve is None:
+            _cache_vve = _calcular_vve()
+    except Exception as e:
+        print(f"[warmup] Error precomputando admin: {e}")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Lanzar warm-up en un thread para no bloquear el arranque
+    threading.Thread(target=_precomputar_admin, daemon=True).start()
+    yield
+
+
+app = FastAPI(title="NutriPerú", version="1.0", lifespan=lifespan)
 
 STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -159,9 +185,7 @@ def guardar_perfil(username: str, req: PerfilRequest, db: Session = Depends(get_
     return {"ok": True, "username": user.username}
 
 
-@app.get("/api/admin/stats")
-def get_admin_stats():
-    """Estadísticas del dataset para el panel académico."""
+def _calcular_stats():
     import pandas as pd
     df = ai_engine.df_ingredientes.copy()
     nums = ['calorias', 'proteina_g', 'carbohidratos_g', 'grasa_g', 'fibra_g', 'grasa_saturada_g']
@@ -180,7 +204,6 @@ def get_admin_stats():
 
     top_proteina = df.nlargest(7, 'proteina_g')[['nombre','proteina_g','categoria']]\
                      .to_dict('records')
-
     ig_conteo = df['indice_glucemico'].value_counts().to_dict()
 
     return {
@@ -190,14 +213,8 @@ def get_admin_stats():
     }
 
 
-@app.get("/api/admin/kmeans")
-def get_kmeans_data():
-    """Ejecuta K-Means (k=2..10) y PCA para visualización en el panel académico."""
-    global _cache_kmeans
-    if _cache_kmeans is not None:
-        return _cache_kmeans
-
-    import pandas as pd, numpy as np
+def _calcular_kmeans():
+    import pandas as pd
     from sklearn.cluster import KMeans
     from sklearn.preprocessing import StandardScaler
     from sklearn.decomposition import PCA
@@ -218,7 +235,6 @@ def get_kmeans_data():
         inercias.append(round(float(km.inertia_), 1))
         siluetas.append(round(float(silhouette_score(X, lbl)), 3))
 
-    # PCA scatter con k=4 (elegido por dominio, equilibra silueta y semántica)
     km4 = KMeans(n_clusters=4, random_state=42, n_init=10)
     clusters = km4.fit_predict(X)
     pca = PCA(n_components=2, random_state=42)
@@ -237,7 +253,7 @@ def get_kmeans_data():
         for c in range(4)
     ]
 
-    _cache_kmeans = {
+    return {
         'rango_k':   list(range(2, 11)),
         'inercias':  inercias,
         'siluetas':  siluetas,
@@ -247,18 +263,9 @@ def get_kmeans_data():
         'scatter':   scatter,
         'centros':   centros,
     }
-    return _cache_kmeans
 
 
-@app.get("/api/admin/vve")
-def get_vve_results():
-    """Ejecuta la suite VV&E con 4 perfiles de prueba."""
-    global _cache_vve
-    if _cache_vve is not None:
-        return _cache_vve
-
-    from .ai_engine import PerfilUsuario, generar_plan_completo
-
+def _calcular_vve():
     perfiles_prueba = [
         ('Hombre joven\nganar músculo',
          PerfilUsuario(edad=25, sexo='M', peso_kg=75, altura_cm=175,
@@ -274,15 +281,15 @@ def get_vve_results():
                        nivel_actividad='intenso', objetivo='ganar_musculo')),
     ]
 
+    def desv(real, tgt):
+        return round((real - tgt) / tgt * 100, 1) if tgt else 0
+
     resultados = []
     for label, perfil in perfiles_prueba:
-        plan    = generar_plan_completo(perfil)
-        t       = plan['targets_dia']
-        td      = plan['totales_dia']
+        plan     = generar_plan_completo(perfil)
+        t        = plan['targets_dia']
+        td       = plan['totales_dia']
         factible = all(len(c['plan']) > 0 for c in plan['comidas'])
-
-        def desv(real, tgt):
-            return round((real - tgt) / tgt * 100, 1) if tgt else 0
 
         resultados.append({
             'label':             label,
@@ -296,8 +303,33 @@ def get_vve_results():
             'num_comidas':       len(plan['comidas']),
             'ing_unicos':        plan['ingredientes_unicos'],
         })
+    return {'perfiles': resultados}
 
-    _cache_vve = {'perfiles': resultados}
+
+@app.get("/api/admin/stats")
+def get_admin_stats():
+    """Estadísticas del dataset (servido desde caché tras warm-up)."""
+    global _cache_stats
+    if _cache_stats is None:
+        _cache_stats = _calcular_stats()
+    return _cache_stats
+
+
+@app.get("/api/admin/kmeans")
+def get_kmeans_data():
+    """K-Means (k=2..10) + PCA 2D (servido desde caché tras warm-up)."""
+    global _cache_kmeans
+    if _cache_kmeans is None:
+        _cache_kmeans = _calcular_kmeans()
+    return _cache_kmeans
+
+
+@app.get("/api/admin/vve")
+def get_vve_results():
+    """Suite VV&E con 4 perfiles (servido desde caché tras warm-up)."""
+    global _cache_vve
+    if _cache_vve is None:
+        _cache_vve = _calcular_vve()
     return _cache_vve
 
 

@@ -91,16 +91,21 @@ class PerfilUsuario:
     }
 
     def __init__(self, edad, sexo, peso_kg, altura_cm, nivel_actividad, objetivo):
-        if not (10 <= edad <= 100):   raise ValueError(f'Edad fuera de rango: {edad}')
-        if not (30 <= peso_kg <= 250): raise ValueError(f'Peso fuera de rango: {peso_kg}')
+        if not (10 <= edad <= 100):       raise ValueError(f'Edad fuera de rango: {edad}')
+        if not (30 <= peso_kg <= 250):    raise ValueError(f'Peso fuera de rango: {peso_kg}')
         if not (100 <= altura_cm <= 230): raise ValueError(f'Altura fuera de rango: {altura_cm}')
+
+        valores = {'sexo': sexo, 'nivel_actividad': nivel_actividad, 'objetivo': objetivo}
         for campo, opciones in self.OPCIONES_VALIDAS.items():
-            if locals()[campo] not in opciones:
-                raise ValueError(f"'{campo}' inválido: {locals()[campo]}")
-        self.edad, self.sexo = edad, sexo.upper()
-        self.peso_kg, self.altura_cm = peso_kg, altura_cm
+            if valores[campo] not in opciones:
+                raise ValueError(f"'{campo}' inválido: {valores[campo]}")
+
+        self.edad            = edad
+        self.sexo            = sexo.upper()
+        self.peso_kg         = peso_kg
+        self.altura_cm       = altura_cm
         self.nivel_actividad = nivel_actividad
-        self.objetivo = objetivo
+        self.objetivo        = objetivo
 
     def calcular_targets(self):
         tmb = calcular_tmb(self.peso_kg, self.altura_cm, self.edad, self.sexo)
@@ -448,7 +453,23 @@ class OrquestadorDiario:
             'reglas_por_comida': {r['comida']: r.get('reglas_log', []) for r in resultados},
         }
 
-# ── [Celdas 11-13] Generador de nombres — fallback local del LLM
+# ── [Celdas 11-13] Generador de nombres — Gemini + fallback local
+# Inicialización perezosa del cliente Gemini. Si la API key no está disponible
+# o la librería no está instalada, se usa el generador local (idéntico al
+# fallback del notebook).
+_GEMINI_MODEL = None
+_GEMINI_DISPONIBLE = False
+try:
+    _GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+    if _GEMINI_API_KEY:
+        import google.generativeai as genai
+        genai.configure(api_key=_GEMINI_API_KEY)
+        _GEMINI_MODEL = genai.GenerativeModel('gemini-2.0-flash')
+        _GEMINI_DISPONIBLE = True
+except Exception:
+    _GEMINI_DISPONIBLE = False
+
+
 _PLANTILLAS = {
     'desayuno': ['{prot} con {carbo} andino', 'Bowl de {prot} y {carbo}',
                  '{prot} nutritivo con {vegetal}', 'Desayuno fitness de {prot}'],
@@ -466,7 +487,8 @@ _DESCRIPCIONES = [
     'Opción nutritiva con ingredientes frescos del mercado peruano.',
 ]
 
-def generar_nombre_platillo(ingredientes_plan, tipo_comida):
+def _generar_nombre_local(ingredientes_plan, tipo_comida):
+    """Fallback determinístico cuando Gemini no está disponible."""
     cats    = {i['categoria'].lower(): i['nombre'] for i in ingredientes_plan}
     prot    = cats.get('proteina',    ingredientes_plan[0]['nombre'])
     carbo   = cats.get('carbohidrato', 'quinua')
@@ -477,6 +499,46 @@ def generar_nombre_platillo(ingredientes_plan, tipo_comida):
     nombre    = plantilla.format(prot=prot, carbo=carbo, vegetal=vegetal, fruta=fruta)
     desc      = _DESCRIPCIONES[hash(tipo + prot) % len(_DESCRIPCIONES)]
     return nombre.capitalize(), desc
+
+
+def _generar_nombre_gemini(ingredientes_plan, tipo_comida):
+    """Llama a Gemini para generar un nombre creativo y descripción breve.
+    Devuelve (nombre, descripcion) o lanza excepción si falla."""
+    lista = ", ".join(f"{i['nombre']} ({i['gramos']}g)" for i in ingredientes_plan)
+    prompt = (
+        f"Eres un chef peruano. Genera UN nombre creativo (máx 6 palabras) y "
+        f"UNA descripción breve (máx 20 palabras) para un platillo de "
+        f"{tipo_comida} con estos ingredientes: {lista}.\n"
+        f"Responde EXACTAMENTE en este formato, sin texto extra:\n"
+        f"NOMBRE: <nombre>\n"
+        f"DESC: <descripción>"
+    )
+    resp = _GEMINI_MODEL.generate_content(
+        prompt,
+        generation_config={'temperature': 0.7, 'max_output_tokens': 80},
+    )
+    texto = (resp.text or "").strip()
+    nombre, desc = None, None
+    for linea in texto.splitlines():
+        if linea.upper().startswith('NOMBRE:'):
+            nombre = linea.split(':', 1)[1].strip()
+        elif linea.upper().startswith('DESC:'):
+            desc = linea.split(':', 1)[1].strip()
+    if not nombre or not desc:
+        raise ValueError(f"Respuesta Gemini con formato inválido: {texto[:120]}")
+    return nombre, desc
+
+
+def generar_nombre_platillo(ingredientes_plan, tipo_comida):
+    """Genera nombre + descripción. Usa Gemini si está disponible; si no, fallback local."""
+    if not ingredientes_plan:
+        return "Platillo sin ingredientes", "Sin datos disponibles."
+    if _GEMINI_DISPONIBLE:
+        try:
+            return _generar_nombre_gemini(ingredientes_plan, tipo_comida)
+        except Exception:
+            pass  # caer a fallback local en cualquier error de API
+    return _generar_nombre_local(ingredientes_plan, tipo_comida)
 
 # ── Orquestador público ───────────────────────────────────────
 def generar_plan_completo(perfil: PerfilUsuario, ingredientes_previos=None,
