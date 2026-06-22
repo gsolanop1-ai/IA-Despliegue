@@ -16,7 +16,14 @@
 <body>
   <div class="topbar">
     <div class="topbar-logo" onclick="window.location.href='/plan'">Nutri<span>Perú</span></div>
-    <div class="topbar-user" id="topUser"></div>
+    <div style="display:flex;align-items:center;gap:14px">
+      <div class="topbar-user" id="topUser"></div>
+      <button onclick="volverAtras()" title="Volver al plan"
+              style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);color:#fff;
+                     border-radius:8px;padding:6px 10px;cursor:pointer;font-size:.8rem">
+        ← Volver
+      </button>
+    </div>
   </div>
 
   <div class="perfil-header">
@@ -25,8 +32,6 @@
   </div>
 
   <div class="container">
-    <button class="btn-back" id="btnVolver" onclick="volverAtras()">← Volver al plan</button>
-
     <div class="card">
       <div class="form-group">
         <label class="form-label">Edad</label>
@@ -139,6 +144,7 @@
     document.getElementById('topUser').textContent = '👤 ' + username;
 
     let editando       = false;
+    let dirty          = false;
     let datosGuardados = null;
 
     // ── Init ─────────────────────────────────────────────────
@@ -179,9 +185,9 @@
     // ── Modo vista (datos en oro) ─────────────────────────────
     function entrarModoVista() {
       editando = false;
+      dirty    = false;
       document.getElementById('pHeader').textContent = 'Tu perfil';
       document.getElementById('pSub').textContent    = 'Estos son tus datos actuales';
-      document.getElementById('btnVolver').style.display = 'inline-flex';
 
       ['edad','peso_kg','altura_cm'].forEach(id => {
         const el = document.getElementById(id);
@@ -205,12 +211,11 @@
     // ── Modo edición ──────────────────────────────────────────
     function entrarModoEdicion(primera = false) {
       editando = true;
+      dirty    = false;
       document.getElementById('pHeader').textContent = primera ? 'Cuéntanos sobre ti' : 'Editar perfil';
       document.getElementById('pSub').textContent    = primera
         ? 'Usamos tus datos para calcular tu plan nutricional exacto'
         : 'Modifica los datos que quieras cambiar';
-      document.getElementById('btnVolver').style.display = 'inline-flex';
-      document.getElementById('btnVolver').textContent = primera ? '← Volver' : '← Volver al plan';
 
       ['edad','peso_kg','altura_cm'].forEach(id => {
         const el = document.getElementById(id);
@@ -237,9 +242,19 @@
     }
 
     function volverAtras() {
-      if (editando && datosGuardados) {
-        if (!confirm('¿Salir sin guardar cambios?')) return;
+      if (editando && dirty) {
+        document.getElementById('modalConfirm').classList.add('show');
+        return;
       }
+      window.location.href = datosGuardados ? '/plan' : '/';
+    }
+
+    function cerrarModal() {
+      document.getElementById('modalConfirm').classList.remove('show');
+    }
+
+    function confirmarSalida() {
+      cerrarModal();
       window.location.href = datosGuardados ? '/plan' : '/';
     }
 
@@ -255,6 +270,7 @@
          .forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       document.getElementById(campo).value = btn.dataset.val;
+      dirty = true;
       recalc();
     }
 
@@ -264,6 +280,7 @@
           .forEach(c => c.classList.remove('active'));
       card.classList.add('active');
       document.getElementById(campo).value = card.dataset.val;
+      dirty = true;
       recalc();
     }
 
@@ -314,9 +331,13 @@
         + (ajustado ? ` ⚠️ mínimo de seguridad (${minimo} kcal)` : '');
     }
 
-    ['edad','peso_kg','altura_cm'].forEach(id =>
-      document.getElementById(id).addEventListener('input', recalc)
-    );
+    ['edad','peso_kg','altura_cm'].forEach(id => {
+      const el = document.getElementById(id);
+      el.addEventListener('input', () => {
+        if (editando) dirty = true;
+        recalc();
+      });
+    });
 
     // ── Guardar ───────────────────────────────────────────────
     async function guardar() {
@@ -354,7 +375,30 @@
       }
     }
 
+    // ── Modal: cerrar al clickear overlay (fuera del card) ────
+    document.addEventListener('DOMContentLoaded', () => {
+      const overlay = document.getElementById('modalConfirm');
+      if (overlay) {
+        overlay.addEventListener('click', (e) => {
+          if (e.target.id === 'modalConfirm') cerrarModal();
+        });
+      }
+    });
+
     init();
   </script>
+
+  <!-- Modal de confirmación al salir con cambios sin guardar -->
+  <div class="modal-overlay" id="modalConfirm">
+    <div class="modal-card">
+      <div class="modal-icon">⚠️</div>
+      <h3 class="modal-title">¿Salir sin guardar?</h3>
+      <p class="modal-desc">Tienes cambios sin guardar en tu perfil. Si sales ahora se perderán.</p>
+      <div class="modal-actions">
+        <button class="btn-primary modal-btn-confirm" onclick="confirmarSalida()">Sí, salir</button>
+        <button class="btn-secondary" onclick="cerrarModal()">No, seguir editando</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

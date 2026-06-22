@@ -693,3 +693,62 @@ img, video, canvas, svg, iframe { max-width: 100%; height: auto; }
   .save-count { font-size: .78rem; }
   .btn-save { padding: 11px; font-size: .88rem; }
 }
+
+/* ── Modal de confirmación ──────────────────────────────── */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(61, 69, 82, .55);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: modalFadeIn .15s ease;
+}
+.modal-overlay.show { display: flex; }
+@keyframes modalFadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.modal-card {
+  background: var(--blanco);
+  border-radius: var(--radio);
+  padding: 28px 24px 20px;
+  max-width: 360px;
+  width: 100%;
+  box-shadow: var(--sombra-lg);
+  text-align: center;
+  animation: modalSlideIn .2s ease;
+  border-top: 4px solid var(--rojo);
+}
+@keyframes modalSlideIn {
+  from { transform: translateY(16px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+.modal-icon {
+  font-size: 2.4rem;
+  margin-bottom: 8px;
+  line-height: 1;
+}
+.modal-title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--gris-700);
+  margin-bottom: 8px;
+  letter-spacing: -.3px;
+}
+.modal-desc {
+  font-size: .88rem;
+  color: var(--gris-400);
+  line-height: 1.5;
+  margin-bottom: 22px;
+}
+.modal-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.modal-actions .btn-primary,
+.modal-actions .btn-secondary { margin-top: 0; }
